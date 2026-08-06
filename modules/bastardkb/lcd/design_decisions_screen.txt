@@ -1,0 +1,123 @@
+LCD SCREEN DESIGN DECISIONS
+============================
+Last updated: 2026-03-16
+
+Consult this file before making decisions about the LCD screen or its theme editor.
+Update this file whenever a new design decision is made.
+Ask Quinn directly before making big decisions.
+
+---
+
+HARDWARE
+--------
+- Screen size: 240x280 pixels
+- Driver: LVGL (embedded GUI library)
+- Keyboard: BastardKB Dilemma
+
+---
+
+STYLE SYSTEM (C / LVGL side)
+-----------------------------
+
+Style struct: ui_styles_t
+  Use direct lv_style_t fields (not the older ui_theme struct approach).
+  The ui_theme struct still exists in theme.h but the migration is toward
+  direct lv_style_t initialization via load_themes() in theme.c.
+  Reason: more flexible, avoids translation layer between theme struct and lv_style_t.
+
+Style names and their roles:
+  - mod_btn          → normal modifier/layer key buttons
+  - mod_btn_pressed  → active/pressed state of those buttons
+  - bar              → slider fill (the colored part of the progress bar)
+  - bar_background   → slider groove/track (background of the bar)
+  - layer_name       → header label showing the current layer name
+  - secondary_labels → value labels and secondary text (e.g., DPI readout)
+  - flex_container   → main panel background color
+  - line             → decorative lines (separator)
+  - line_background  → background of line elements
+
+Fonts available (defined in QMK/LVGL build):
+  - montserratbold14  → primary UI font (buttons, layer name)
+  - montserratbold13  → secondary UI font (labels, values)
+  - dmsans variants
+  - jetbrainsmono variants
+  Decision: prefer montserrat family for UI consistency.
+
+---
+
+THEMES (C side)
+---------------
+
+Three defined themes:
+  1. white_green / ivory — light theme, green accent, warm ivory background
+  2. oxide_style         — dark theme, orange/amber accent, blue-grey background
+  3. steel_theme         — dark theme, steel blue accent, dark navy background
+                           (struct-based, uses ui_theme approach)
+
+EEPROM persistence:
+  Theme ID stored as 1 byte in dilemma_config_theme_t (union with uint8_t raw).
+  Only the current_theme_id is persisted — not all style values.
+  Reason: minimize EEPROM usage; styles are always recomputed from theme ID at boot.
+
+update_styles_from_current_theme():
+  Currently TEST code that cycles between white_green and oxide_style.
+  Not final behavior — will be replaced with proper theme selection.
+
+change_style_colors(HSV hsv):
+  Allows runtime color override driven by the keyboard's RGB underglow data.
+  Used to sync LCD accent color with RGB lighting.
+
+---
+
+THEME EDITOR (HTML tool)
+------------------------
+
+File: bkb-theme-editor.html (single-file HTML/CSS/JS, no build step)
+Purpose: Design themes visually, then copy/export generated LVGL C code
+         to paste into theme.c.
+
+Layout:
+  - Left sidebar: controls
+  - Right area: live preview (240×280 simulated screen) + C code output
+  - No top tab buttons for switching views (removed — redundant with layout)
+
+Sidebar tabs:
+  - "Simple" tab (default): beginner mode — 2 color pickers + dark toggle
+  - "Advanced" tab: full ~35 individual style controls
+  Both tabs share the same S (style state) object.
+  Switching tabs does NOT reset state.
+  Advanced tab always reflects the last derived or manually edited theme.
+
+Simple mode color derivation:
+  Inputs: Primary color (P = accent), Secondary color (Q = surface tint), dark/light toggle.
+  All ~35 style fields are derived algorithmically via HSL math.
+  Color roles:
+    - P (primary/accent) drives: bar fill, pressed button bg/border/text/shadow
+    - Q (secondary/surface) drives: panel bg, header, normal button bg/border/shadow, groove
+  Non-color properties (radius, border width, padding, shadow size) are not derived —
+  they stay at preset defaults.
+
+Simple mode defaults:
+  - Dark mode:  Primary = #5b9cf6 (steel blue), Secondary = #1a2030 (dark navy)
+  - Light mode: Primary = #297a37 (ivy green),  Secondary = #e8e0d4 (warm beige)
+  Toggling dark/light resets both colors to the mode's defaults.
+  Reason: the two modes require very different lightness ranges, so keeping the
+  same hue with just a lightness flip produces poor results.
+
+Import/Export:
+  - Export: downloads current state as theme_styles.c
+  - Import: parses a previously exported .c file back into the editor state
+  - Copy button: copies C code to clipboard (existing behavior, kept)
+
+---
+
+WORKFLOW INTENT
+---------------
+
+Intended usage flow:
+  1. Open editor, use Simple tab to pick 2 colors and light/dark preference
+  2. Switch to Advanced tab to fine-tune any individual properties
+  3. Copy or Export the generated C code
+  4. Paste into theme.c in the QMK userspace repo
+
+The editor is a standalone local tool — no server, no build step, no dependencies.

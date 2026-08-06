@@ -1,0 +1,23 @@
+{
+    "module_name": "Dilemma LCD",
+    "maintainer": "BastardKB",
+    "license": "GPL-2.0-or-later",
+    "keycodes": [
+        {
+            "key": "LCD_MODULE_CHANGE_THEME",
+            "aliases": ["LCDTH"]
+        },
+        {
+            "key": "LCD_MODULE_MENU",
+            "aliases": ["LCDME"]
+        },
+        {
+            "key": "LCD_MENU_NEXT",
+            "aliases": ["LCDNE"]
+        },
+        {
+            "key": "LCD_MENU_PREV",
+            "aliases": ["LCDPR"]
+        }
+    ]
+}
