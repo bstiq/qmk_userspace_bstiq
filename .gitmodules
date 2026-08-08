@@ -1,6 +1,3 @@
 [submodule "bastardkb"]
 	path = bastardkb
 	url = https://github.com/bstiq/qmk_modules_bstiq
-[submodule "modules/bastardkb"]
-	path = modules/bastardkb
-	url = https://github.com/bstiq/qmk_modules_bstiq
