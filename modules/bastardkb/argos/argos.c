@@ -23,8 +23,6 @@
 #include <string.h>
 #include <time.h>
 
-#include "argos_pointer.h"
-
 #if BK_HAS_POINTING_DEVICE
 #include "bk_pointing_device.h"
 #endif
@@ -141,24 +139,6 @@ bool argos_handle_command(uint8_t *data, uint8_t length) {
         argos_config.has_displayed_welcome_message = command_data[0];
         argos_write_eeprom(ARGOS_OFFSET_CONFIG, &argos_config,
                            sizeof(argos_config));
-        send_data = true;
-        break;
-    }
-
-    case argos_id_get_pointing_device_info: {
-        build_pointing_device_info_command_data(&command_data);
-        send_data = true;
-        break;
-    }
-
-    case argos_id_set_dpi: {
-        argos_set_dpi(command_data);
-        send_data = true;
-        break;
-    }
-
-    case argos_id_set_sniping_dpi: {
-        argos_set_sniping_dpi(command_data);
         send_data = true;
         break;
     }
@@ -400,37 +380,16 @@ bool argos_handle_command(uint8_t *data, uint8_t length) {
     }
 
 #ifdef BK_HAS_POINTING_DEVICE
-    case argos_id_set_auto_mouse_layer_enabled: {
-            send_data = true; // ack
-            bkpd_set_auto_mouse_layer_enabled(command_data[0]);
-        break;
-    }
-    case argos_id_set_auto_precision_on_mouse_layer_enabled: {
-            send_data = true; // ack
-            bkpd_set_auto_precision_on_mouse_layer_enabled(command_data[0]);
-        break;
-    }
-
-    case argos_id_set_axis_invert: {
-            send_data = true; // ack
-            const uint8_t axis_index = command_data[0];
-            const bool invert = command_data[1];
-            if(axis_index == 0 ) {
-                bkpd_set_dragscroll_axis_invert_x(invert);
-            }
-            else if(axis_index == 1) {
-                bkpd_set_dragscroll_axis_invert_y(invert);
-            }
+    case argos_id_set_sniping_dpi:
+    case argos_id_set_dpi:
+    case argos_id_set_auto_mouse_layer_enabled:
+    case argos_id_set_auto_precision_on_mouse_layer_enabled:
+    case argos_id_set_axis_invert:
+    case argos_id_get_pointing_device_info: {
+        send_data = bkpd_dispatch_command(*command_id, &command_data);
         break;
     }
 
-    case argos_id_set_dragscroll_dpi: {
-            send_data = true; // ack
-            // TODO
-            // bkpd_set_dragscroll_dpi(command_data[0]);
-        break;
-    }
-    
 #endif // BK_HAS_POINTING_DEVICE
 
     default:
