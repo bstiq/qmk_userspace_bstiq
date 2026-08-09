@@ -29,9 +29,9 @@
 #endif
 
 // More available live storage! Useful for tap dances and RGB
-#define WEAR_LEVELING_BACKING_SIZE 131072
-// better read write endurance
-#define WEAR_LEVELING_LOGICAL_SIZE (WEAR_LEVELING_BACKING_SIZE / 4)
+// Also, better read write endurance
+#define WEAR_LEVELING_LOGICAL_SIZE 65536
+#define WEAR_LEVELING_BACKING_SIZE (WEAR_LEVELING_LOGICAL_SIZE * 4)
 
 #define SPLIT_TRANSACTION_IDS_KB RPC_ID_RGB_SYNC
 
