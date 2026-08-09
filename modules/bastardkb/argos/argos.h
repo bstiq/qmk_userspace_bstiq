@@ -21,8 +21,8 @@ uint32_t last_activity_time;
 enum argos_command_id {
     argos_id_get_kb_info = 0x01,
     argos_id_get_combo = 0x02,
-    argos_id_delete_combo_key = 0x03,
-    argos_id_capture_combo_key = 0x04,
+    argos_id_delete_combo_key = 0x03, // legacy, not used anymore
+    argos_id_capture_combo_key = 0x04, // legacy, not used anymore
     argos_id_get_theme_id = 0x05, // legacy, not used anymore
     argos_id_set_theme_id = 0x06,
     argos_id_get_tap_dance = 0x07,
