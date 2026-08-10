@@ -15,6 +15,9 @@
 #define QMK_KEYCODES_VERSION_COMPATIBLE_1 0
 #define QMK_KEYCODES_VERSION_COMPATIBLE_2 8
 
+// Macro text delay
+#define DYNAMIC_KEYMAP_MACRO_DELAY 10
+
 // Used to capture keys (for combos and tap dances)
 uint32_t last_activity_time;
 
