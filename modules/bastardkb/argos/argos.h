@@ -15,6 +15,10 @@
 #define QMK_KEYCODES_VERSION_COMPATIBLE_1 0
 #define QMK_KEYCODES_VERSION_COMPATIBLE_2 8
 
+// Macro text delay, otherwise keys can overwrite themselves and skip
+#undef TAP_CODE_DELAY
+#define TAP_CODE_DELAY 5
+
 // Used to capture keys (for combos and tap dances)
 uint32_t last_activity_time;
 
