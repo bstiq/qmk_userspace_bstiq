@@ -28,6 +28,10 @@
 #define TAPPING_TERM_PER_KEY
 #endif
 
+// Macro text delay, otherwise keys can overwrite themselves and skip
+#undef DYNAMIC_KEYMAP_MACRO_DELAY
+#define DYNAMIC_KEYMAP_MACRO_DELAY 8
+
 // More available live storage! Useful for tap dances and RGB
 // Also, better read write endurance
 #define WEAR_LEVELING_LOGICAL_SIZE 65536
