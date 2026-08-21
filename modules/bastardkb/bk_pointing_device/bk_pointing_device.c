@@ -50,6 +50,8 @@ ASSERT_COMMUNITY_MODULES_MIN_API_VERSION(1, 0, 0);
 #define BK_POINTING_DEVICE_SNIPING_DPI_CONFIG_STEP 100
 #define BK_POINTING_DEVICE_DRAGSCROLL_DPI 100
 #define BK_POINTING_DEVICE_DRAGSCROLL_BUFFER_SIZE 6
+#define BK_POINTING_DEVICE_CURSOR_BUFFER_SIZE_X 40
+#define BK_POINTING_DEVICE_CURSOR_BUFFER_SIZE_Y 80
 
 #define BK_POINTING_DEVICE_MAX_DPI_BYTES 4
 #define BK_POINTING_DEVICE_MAX_SNIPING_DPI_BYTES 2
@@ -70,6 +72,7 @@ typedef union {
         bool dragscroll_axis_invert_x : 1;
         bool dragscroll_axis_invert_y : 1;
         bool has_copied_qmk_config : 1;
+        bool is_cursor_enabled : 1;
         // TODO for dpi: init at #define value
     } __attribute__((packed));
 } bkpd_config_t;
@@ -336,6 +339,11 @@ void bkpd_set_pointer_dragscroll_enabled(bool enable) {
     bkpd_maybe_update_cpi();
 }
 
+// TODO: toggle.
+void bkpd_set_pointer_cursor_enabled(bool enable) {
+    g_bkpd_config.is_cursor_enabled = enable;
+}
+
 uint16_t bkpd_get_minimum_default_dpi(void) {
     return BK_POINTING_DEVICE_MINIMUM_DEFAULT_DPI;
 }
@@ -357,20 +365,39 @@ uint16_t bkpd_get_sniping_dpi_config_step(void) {
 */
 report_mouse_t pointing_device_task_bk_pointing_device(report_mouse_t mouse_report) {
     if (is_keyboard_master()) {    
-        static int16_t scroll_buffer_x = 0;
-        static int16_t scroll_buffer_y = 0;
+        static int16_t buffer_x = 0;
+        static int16_t buffer_y = 0;
         if (g_bkpd_config.is_dragscroll_enabled) {
-            scroll_buffer_x += (g_bkpd_config.dragscroll_axis_invert_x ? -1 : 1) * mouse_report.x;
-            scroll_buffer_y += (g_bkpd_config.dragscroll_axis_invert_y ? -1 : 1) * mouse_report.y;
+            buffer_x += (g_bkpd_config.dragscroll_axis_invert_x ? -1 : 1) * mouse_report.x;
+            buffer_y += (g_bkpd_config.dragscroll_axis_invert_y ? -1 : 1) * mouse_report.y;
             mouse_report.x = 0;
             mouse_report.y = 0;
-            if (abs(scroll_buffer_x) > BK_POINTING_DEVICE_DRAGSCROLL_BUFFER_SIZE) {
-                mouse_report.h = scroll_buffer_x > 0 ? 1 : -1;
-                scroll_buffer_x = 0;
+            if (abs(buffer_x) > BK_POINTING_DEVICE_DRAGSCROLL_BUFFER_SIZE) {
+                mouse_report.h = buffer_x > 0 ? 1 : -1;
+                buffer_x = 0;
             }
-            if (abs(scroll_buffer_y) > BK_POINTING_DEVICE_DRAGSCROLL_BUFFER_SIZE) {
-                mouse_report.v = scroll_buffer_y > 0 ? 1 : -1;
-                scroll_buffer_y = 0;
+            if (abs(buffer_y) > BK_POINTING_DEVICE_DRAGSCROLL_BUFFER_SIZE) {
+                mouse_report.v = buffer_y > 0 ? 1 : -1;
+                buffer_y = 0;
+            }
+        }
+        if(g_bkpd_config.is_cursor_enabled) {
+            // TODO cursor invert option
+            buffer_x += mouse_report.x;
+            buffer_y += mouse_report.y;
+            mouse_report.x = 0;
+            mouse_report.y = 0;
+            if(abs(buffer_x) > BK_POINTING_DEVICE_CURSOR_BUFFER_SIZE_X) {
+                argos_keycode_tap(buffer_x > 0 ? KC_RIGHT : KC_LEFT);
+                buffer_x = 0;
+                // only allow to go horizontal or vertical at a time
+                buffer_y = 0;
+            }
+            if(abs(buffer_y) > BK_POINTING_DEVICE_CURSOR_BUFFER_SIZE_Y) {
+                argos_keycode_tap(buffer_y > 0 ? KC_DOWN : KC_UP);
+                buffer_y = 0;
+                // only allow to go horizontal or vertical at a time
+                buffer_x = 0;
             }
         }
         mouse_report = pointing_device_task_user(mouse_report);
@@ -442,6 +469,9 @@ bool process_record_bk_pointing_device(uint16_t keycode, keyrecord_t* record) {
         case DRGSCRL:
             bkpd_set_pointer_dragscroll_enabled(record->event.pressed);
             break;
+        case CURSOR:
+                bkpd_set_pointer_cursor_enabled(record->event.pressed);
+                break;
         case DRG_TOG:
             if (record->event.pressed) {
                 bkpd_set_pointer_dragscroll_enabled(!bkpd_get_pointer_dragscroll_enabled());

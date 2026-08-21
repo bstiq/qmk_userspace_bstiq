@@ -132,7 +132,7 @@ combo_t key_combos[] = {
 #define LAYOUT_LAYER_POINTER                                                                  \
     QK_BOOT,  EE_CLR, XXXXXXX, DPI_MOD, S_D_MOD, S_D_MOD, DPI_MOD, XXXXXXX,  EE_CLR, QK_BOOT, \
     ______________HOME_ROW_GACS_L______________, ______________HOME_ROW_GACS_R______________, \
-    _______, DRGSCRL, SNIPING, XXXXXXX, XXXXXXX, XXXXXXX, XXXXXXX, SNIPING, DRGSCRL, _______, \
+    _______, DRGSCRL, SNIPING, CURSOR, XXXXXXX, XXXXXXX, XXXXXXX, SNIPING, DRGSCRL, _______, \
                       MS_BTN2, MS_BTN3, MS_BTN1, MS_BTN3, MS_BTN1, _______
 
 /**

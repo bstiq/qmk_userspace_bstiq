@@ -35,6 +35,7 @@ uint16_t bkpd_get_default_dpi_config_step(void);
 uint16_t bkpd_get_minimum_sniping_dpi(void);
 uint16_t bkpd_get_sniping_dpi_config_step(void);
 bool bkpd_is_changing_dpi_settings(void);
+void bkpd_set_pointer_cursor_enabled(bool enable);
 
 #ifdef POINTING_DEVICE_DRIVER_digitizer
 bool digitizer_task_kb(digitizer_t *const digitizer_state);
