@@ -20,7 +20,7 @@
  enum {
     MODE_NORMAL = 0,
     MODE_SNIPING = 1,
-    MODE_DRGSCRL = 2,
+    MODE_DRAGSCROLL = 2,
     MODE_CURSOR = 3
 };
 
@@ -34,3 +34,8 @@ void bkpd_mode_normal_set_active(bool active);
 void bkpd_mode_sniping_set_active(bool active);
 report_mouse_t bkpd_mode_dragscroll_process(report_mouse_t mouse_report);
 report_mouse_t bkpd_mode_cursor_process(report_mouse_t mouse_report);
+void bkpd_modes_init(void);
+void bkpd_mode_cycle_dpi(uint8_t mode_id, bool forward);
+void bkpd_mode_affect_dpi(uint8_t mode_id);
+void bkpd_mode_current_affect_dpi(void);
+uint8_t bkpd_mode_get_active_id(void);

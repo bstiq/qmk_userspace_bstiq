@@ -23,7 +23,7 @@
 // TODO cirque configuration
 // TODO later switch to per-module eeprom management
 #ifdef BK_HAS_POINTING_DEVICE
-#    define ARGOS_SIZE_POINTER_CONFIG 12 // a bit extra just in case
+#    define ARGOS_SIZE_POINTER_CONFIG 100 // a lot extra just in case... we also store pointer modes configs
 #    define ARGOS_OFFSET_POINTER_CONFIG 0
 #    define ARGOS_OFFSET_CONFIG (ARGOS_OFFSET_POINTER_CONFIG + ARGOS_SIZE_POINTER_CONFIG)
 #else
