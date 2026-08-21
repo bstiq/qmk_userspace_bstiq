@@ -15,3 +15,6 @@
 #define DRGSCRL 0x7E06
 #define DRG_TOG 0x7E07
 #define CURSOR 0x7E08
+#define CUR_TOG 0x7E09
+#define INVX 0x7E0A
+#define INVY 0x7E0B

@@ -1,6 +1,6 @@
 /*
  * Copyright 2020 Christopher Courtney <drashna@live.com> (@drashna)
- * Copyright 2021 Quentin LEBASTARD <qlebastard@gmail.com>
+ * Copyright 2021 Quentin LEBASTARD <bstkbd@gmail.com>
  * Copyright 2021 Charly Delay <charly@codesink.dev> (@0xcharly)
  *
  * This program is free software: you can redistribute it and/or modify
@@ -17,12 +17,13 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
- /*
-    Generic pointing device configuration and features.
- */
+/*
+   Generic pointing device configuration and features.
+*/
 
 #include QMK_KEYBOARD_H
 #include "bk_pointing_device.h"
+#include "bk_pointing_modes.h"
 #include "transactions.h"
 #include <string.h>
 #include "math.h"
@@ -33,81 +34,80 @@
 #endif // CONSOLE_ENABLE
 
 #ifdef COMMUNITY_MODULE_ARGOS_ENABLE
-#include "argos.h"
-#include "argos_rgb.h"
+#    include "argos.h"
+#    include "argos_rgb.h"
 #endif
 
 #ifdef POINTING_DEVICE_DRIVER_digitizer
-#include "digitizer.h"
+#    include "digitizer.h"
 #endif
 
 ASSERT_COMMUNITY_MODULES_MIN_API_VERSION(1, 0, 0);
 
-// TODO store those in config?
+// TODO store those in config? // move them to pointing modes.c
 #define BK_POINTING_DEVICE_MINIMUM_DEFAULT_DPI 400
 #define BK_POINTING_DEVICE_DEFAULT_DPI_CONFIG_STEP 200
 #define BK_POINTING_DEVICE_MINIMUM_SNIPING_DPI 200
 #define BK_POINTING_DEVICE_SNIPING_DPI_CONFIG_STEP 100
 #define BK_POINTING_DEVICE_DRAGSCROLL_DPI 100
-#define BK_POINTING_DEVICE_DRAGSCROLL_BUFFER_SIZE 6
-#define BK_POINTING_DEVICE_CURSOR_BUFFER_SIZE_X 40
-#define BK_POINTING_DEVICE_CURSOR_BUFFER_SIZE_Y 80
 
 #define BK_POINTING_DEVICE_MAX_DPI_BYTES 4
 #define BK_POINTING_DEVICE_MAX_SNIPING_DPI_BYTES 2
 
 #ifdef POINTING_DEVICE_DRIVER_digitizer
-#define BK_POINTING_DEVICE_DRAGSCROLL_BUFFER_SIZE_DIGITIZER 600
+#    define BK_POINTING_DEVICE_DRAGSCROLL_BUFFER_SIZE_DIGITIZER 600
 #endif
 
 typedef union {
     uint8_t raw;
     struct {
-        uint8_t pointer_default_dpi : BK_POINTING_DEVICE_MAX_DPI_BYTES; // 16 steps available.
+        uint8_t pointer_default_dpi : BK_POINTING_DEVICE_MAX_DPI_BYTES;         // 16 steps available.
         uint8_t pointer_sniping_dpi : BK_POINTING_DEVICE_MAX_SNIPING_DPI_BYTES; // 4 steps available.
         bool    is_dragscroll_enabled : 1;
         bool    is_sniping_enabled : 1;
-        bool auto_mouse_layer_enabled : 1;
-        bool auto_precision_on_mouse_layer_enabled : 1;
-        bool dragscroll_axis_invert_x : 1;
-        bool dragscroll_axis_invert_y : 1;
-        bool has_copied_qmk_config : 1;
-        bool is_cursor_enabled : 1;
+        bool    auto_mouse_layer_enabled : 1;
+        bool    auto_precision_on_mouse_layer_enabled : 1;
+        bool    dragscroll_axis_invert_x : 1;
+        bool    dragscroll_axis_invert_y : 1;
+        bool    has_copied_qmk_config : 1;
+        bool    is_cursor_enabled : 1;
+        uint8_t active_mode;
+        // TODO add invert/DPI for all modes
         // TODO for dpi: init at #define value
     } __attribute__((packed));
 } bkpd_config_t;
 
-static bkpd_config_t g_bkpd_config = {0};
-static bool changing_dpi_settings = false;
-static bool changing_sniping_dpi_settings = false;
+static bkpd_config_t g_bkpd_config                 = {0};
+static bool          changing_dpi_settings         = false;
+static bool          changing_sniping_dpi_settings = false;
 
 /**
-* \brief Set the value of `config` from EEPROM.
-*
-* Note that `is_dragscroll_enabled` and `is_sniping_enabled` are purposefully
-* ignored since we do not want to persist this state to memory.  In practice,
-* this state is always written to maximize write-performances.  Therefore, we
-* explicitly set them to `false` in this function.
-*/
+ * \brief Set the value of `config` from EEPROM.
+ *
+ * Note that `is_dragscroll_enabled` and `is_sniping_enabled` are purposefully
+ * ignored since we do not want to persist this state to memory.  In practice,
+ * this state is always written to maximize write-performances.  Therefore, we
+ * explicitly set them to `false` in this function.
+ */
 static void read_bkpd_config_from_eeprom(void) {
 // TODO: replace with per-module memory management
 #if defined(BK_HAS_POINTING_DEVICE) && defined(COMMUNITY_MODULE_ARGOS_ENABLE)
-argos_read_eeprom(ARGOS_OFFSET_POINTER_CONFIG, &g_bkpd_config, sizeof(bkpd_config_t));
+    argos_read_eeprom(ARGOS_OFFSET_POINTER_CONFIG, &g_bkpd_config, sizeof(bkpd_config_t));
 #else
-    g_bkpd_config.raw                   = eeconfig_read_kb() & 0xff;
+    g_bkpd_config.raw = eeconfig_read_kb() & 0xff;
 #endif
     g_bkpd_config.is_dragscroll_enabled = false;
     g_bkpd_config.is_sniping_enabled    = false;
 }
 
 /**
-* \brief Save the value of `config` to eeprom.
-*
-* Note that all values are written verbatim, including whether drag-scroll
-* and/or sniper mode are enabled.  `read_bkpd_config_from_eeprom(…)`
-* resets these 2 values to `false` since it does not make sense to persist
-* these across reboots of the board.
-*/
+ * \brief Save the value of `config` to eeprom.
+ *
+ * Note that all values are written verbatim, including whether drag-scroll
+ * and/or sniper mode are enabled.  `read_bkpd_config_from_eeprom(…)`
+ * resets these 2 values to `false` since it does not make sense to persist
+ * these across reboots of the board.
+ */
 static void write_bkpd_config_to_eeprom(void) {
 // TODO: replace with per-module memory management
 #if defined(BK_HAS_POINTING_DEVICE) && defined(COMMUNITY_MODULE_ARGOS_ENABLE)
@@ -120,46 +120,45 @@ static void write_bkpd_config_to_eeprom(void) {
 bool bkpd_dispatch_command(const uint8_t command_id, uint8_t **command_data) {
     bool send_data = true;
 #if defined(COMMUNITY_MODULE_ARGOS_ENABLE)
-    switch(command_id) {
-    case argos_id_get_pointing_device_info: {
-        bkpd_build_pointing_device_info_command_data(command_data);
-        break;
-    }
-    case argos_id_set_dpi: {
-        uint16_t new_dpi = (*command_data)[0] | ((*command_data)[1] << 8);
-        bkpd_set_pointer_default_dpi(new_dpi);
-        break;
-    }
-    case argos_id_set_sniping_dpi: {
-        uint16_t new_dpi = (*command_data)[0] | ((*command_data)[1] << 8);
-        bkpd_set_pointer_sniping_dpi(new_dpi);
-        break;
-    }
-    case argos_id_set_auto_mouse_layer_enabled: {
-        bkpd_set_auto_mouse_layer_enabled((*command_data)[0]);
-        break;
-    }
-    case argos_id_set_auto_precision_on_mouse_layer_enabled: {
-        bkpd_set_auto_precision_on_mouse_layer_enabled((*command_data)[0]);
-        break;
-    }
-    case argos_id_set_axis_invert: {
-        const uint8_t axis_index = (*command_data)[0];
-        const bool invert = (*command_data)[1];
-        if(axis_index == 0 ) {
-            bkpd_set_dragscroll_axis_invert_x(invert);
+    switch (command_id) {
+        case argos_id_get_pointing_device_info: {
+            bkpd_build_pointing_device_info_command_data(command_data);
+            break;
         }
-        else if(axis_index == 1) {
-            bkpd_set_dragscroll_axis_invert_y(invert);
+        case argos_id_set_dpi: {
+            uint16_t new_dpi = (*command_data)[0] | ((*command_data)[1] << 8);
+            bkpd_set_pointer_default_dpi(new_dpi);
+            break;
         }
-        break;
-    }
-    case argos_id_set_dragscroll_dpi: {
-        // TODO
-        break;
-    }
-    default:
-        break;
+        case argos_id_set_sniping_dpi: {
+            uint16_t new_dpi = (*command_data)[0] | ((*command_data)[1] << 8);
+            bkpd_set_pointer_sniping_dpi(new_dpi);
+            break;
+        }
+        case argos_id_set_auto_mouse_layer_enabled: {
+            bkpd_set_auto_mouse_layer_enabled((*command_data)[0]);
+            break;
+        }
+        case argos_id_set_auto_precision_on_mouse_layer_enabled: {
+            bkpd_set_auto_precision_on_mouse_layer_enabled((*command_data)[0]);
+            break;
+        }
+        case argos_id_set_axis_invert: {
+            const uint8_t axis_index = (*command_data)[0];
+            const bool    invert     = (*command_data)[1];
+            if (axis_index == 0) {
+                bkpd_set_dragscroll_axis_invert_x(invert);
+            } else if (axis_index == 1) {
+                bkpd_set_dragscroll_axis_invert_y(invert);
+            }
+            break;
+        }
+        case argos_id_set_dragscroll_dpi: {
+            // TODO
+            break;
+        }
+        default:
+            break;
     }
 #endif
     return send_data;
@@ -168,38 +167,38 @@ bool bkpd_dispatch_command(const uint8_t command_id, uint8_t **command_data) {
 void bkpd_build_pointing_device_info_command_data(uint8_t **command_data) {
     (*command_data)[0] = pointing_device_type_unknown;
 #ifdef BK_HAS_POINTING_DEVICE
-#if defined(POINTING_DEVICE_DRIVER_pmw3360) // Charybdis / Dilemma trackball
+#    if defined(POINTING_DEVICE_DRIVER_pmw3360) // Charybdis / Dilemma trackball
     (*command_data)[0] = pointing_device_type_trackball;
-#elif defined(POINTING_DEVICE_DRIVER_digitizer) // Dilemma v3 / procyon
+#    elif defined(POINTING_DEVICE_DRIVER_digitizer)           // Dilemma v3 / procyon
     (*command_data)[0] = pointing_device_type_trackpad_procyon;
-#elif defined(POINTING_DEVICE_DRIVER_cirque_pinnacle_spi) // Dilemma v2 / cirque
+#    elif defined(POINTING_DEVICE_DRIVER_cirque_pinnacle_spi) // Dilemma v2 / cirque
     (*command_data)[0] = pointing_device_type_trackpad_cirque;
-#endif
-    if((*command_data)[0] != pointing_device_type_unknown) {
+#    endif
+    if ((*command_data)[0] != pointing_device_type_unknown) {
         // pointing dpi is up to 400+16*200 = 3600, 2 bytes
         (*command_data)[1] = bkpd_get_pointer_default_dpi() & 0xFF;
         (*command_data)[2] = (bkpd_get_pointer_default_dpi() >> 8) & 0xFF;
         // minimum default DPI is 400, 2 bytes
         uint16_t minimum_default_dpi = bkpd_get_minimum_default_dpi();
-        (*command_data)[3] = minimum_default_dpi & 0xFF;
-        (*command_data)[4] = (minimum_default_dpi >> 8) & 0xFF;
+        (*command_data)[3]           = minimum_default_dpi & 0xFF;
+        (*command_data)[4]           = (minimum_default_dpi >> 8) & 0xFF;
         // default DPI config step is 200, so one byte, but we use 2 just in
         // case
         uint16_t default_dpi_config_step = bkpd_get_default_dpi_config_step();
-        (*command_data)[5] = default_dpi_config_step & 0xFF;
-        (*command_data)[6] = (default_dpi_config_step >> 8) & 0xFF;
+        (*command_data)[5]               = default_dpi_config_step & 0xFF;
+        (*command_data)[6]               = (default_dpi_config_step >> 8) & 0xFF;
         // sniping DPI is up to 200+4*100 = 600, 2 bytes
         (*command_data)[7] = bkpd_get_pointer_sniping_dpi() & 0xFF;
         (*command_data)[8] = (bkpd_get_pointer_sniping_dpi() >> 8) & 0xFF;
         // mininmum sniping dpi is 200, but ue use 2 bytes ju) in case
         uint16_t minimum_sniping_dpi = bkpd_get_minimum_sniping_dpi();
-        (*command_data)[9] = minimum_sniping_dpi & 0xFF;
-        (*command_data)[10] = (minimum_sniping_dpi >> 8) & 0xFF;
+        (*command_data)[9]           = minimum_sniping_dpi & 0xFF;
+        (*command_data)[10]          = (minimum_sniping_dpi >> 8) & 0xFF;
         // sniping DPI config step is 100, so one byte, but we use 2 just in
         // case
         uint16_t sniping_dpi_config_step = bkpd_get_sniping_dpi_config_step();
-        (*command_data)[11] = sniping_dpi_config_step & 0xFF;
-        (*command_data)[12] = (sniping_dpi_config_step >> 8) & 0xFF;
+        (*command_data)[11]              = sniping_dpi_config_step & 0xFF;
+        (*command_data)[12]              = (sniping_dpi_config_step >> 8) & 0xFF;
         // pointing DPI max steps is 16, so one byte is plenty
         // this is hardcoded here as we can't read it from dilemma.c (private
         // config structure dilemma_config_t)
@@ -231,7 +230,7 @@ void bkpd_set_pointer_default_dpi(uint16_t new_dpi) {
     int16_t difference = new_dpi - old_dpi;
     // calculate how many steps we need, it could be negative
     uint16_t default_dpi_config_step = bkpd_get_default_dpi_config_step();
-    int16_t new_steps = difference / default_dpi_config_step;
+    int16_t  new_steps               = difference / default_dpi_config_step;
     // apply the steps one by one
     bool forward = new_steps > 0;
     for (int i = 0; i < abs(new_steps); i++) {
@@ -251,13 +250,13 @@ void bkpd_set_pointer_sniping_dpi(uint16_t new_dpi) {
     int16_t difference = new_dpi - old_dpi;
     // calculate how many steps we need, it could be negative
     uint16_t sniping_dpi_config_step = bkpd_get_sniping_dpi_config_step();
-    int8_t new_steps = difference / sniping_dpi_config_step;
+    int8_t   new_steps               = difference / sniping_dpi_config_step;
     // apply the steps one by one
     bool forward = new_steps > 0;
     for (int i = 0; i < abs(new_steps); i++) {
         bkpd_cycle_pointer_sniping_dpi(forward);
     }
-    }
+}
 
 /** \brief Set the appropriate DPI for the input config. */
 static void bkpd_maybe_update_cpi(void) {
@@ -271,11 +270,11 @@ static void bkpd_maybe_update_cpi(void) {
 }
 
 /**
-* \brief Update the pointer's default DPI to the next or previous step.
-*
-* Increases the DPI value if `forward` is `true`, decreases it otherwise.
-* The increment/decrement steps are equal to BK_BK_POINTING_DEVICE_DEFAULT_DPI_CONFIG_STEP.
-*/
+ * \brief Update the pointer's default DPI to the next or previous step.
+ *
+ * Increases the DPI value if `forward` is `true`, decreases it otherwise.
+ * The increment/decrement steps are equal to BK_BK_POINTING_DEVICE_DEFAULT_DPI_CONFIG_STEP.
+ */
 void bkpd_cycle_pointer_default_dpi_noeeprom(bool forward) {
     g_bkpd_config.pointer_default_dpi += forward ? 1 : -1;
     bkpd_maybe_update_cpi();
@@ -287,11 +286,11 @@ void bkpd_cycle_pointer_default_dpi(bool forward) {
 }
 
 /**
-* \brief Update the pointer's sniper-mode DPI to the next or previous step.
-*
-* Increases the DPI value if `forward` is `true`, decreases it otherwise.
-* The increment/decrement steps are equal to BK_POINTING_DEVICE_SNIPING_DPI_CONFIG_STEP.
-*/
+ * \brief Update the pointer's sniper-mode DPI to the next or previous step.
+ *
+ * Increases the DPI value if `forward` is `true`, decreases it otherwise.
+ * The increment/decrement steps are equal to BK_POINTING_DEVICE_SNIPING_DPI_CONFIG_STEP.
+ */
 void bkpd_cycle_pointer_sniping_dpi_noeeprom(bool forward) {
     g_bkpd_config.pointer_sniping_dpi += forward ? 1 : -1;
     bkpd_maybe_update_cpi();
@@ -361,45 +360,11 @@ uint16_t bkpd_get_sniping_dpi_config_step(void) {
 }
 
 /**
-* \brief Implement drag-scroll.
-*/
+ * \brief Implement drag-scroll.
+ */
 report_mouse_t pointing_device_task_bk_pointing_device(report_mouse_t mouse_report) {
-    if (is_keyboard_master()) {    
-        static int16_t buffer_x = 0;
-        static int16_t buffer_y = 0;
-        if (g_bkpd_config.is_dragscroll_enabled) {
-            buffer_x += (g_bkpd_config.dragscroll_axis_invert_x ? -1 : 1) * mouse_report.x;
-            buffer_y += (g_bkpd_config.dragscroll_axis_invert_y ? -1 : 1) * mouse_report.y;
-            mouse_report.x = 0;
-            mouse_report.y = 0;
-            if (abs(buffer_x) > BK_POINTING_DEVICE_DRAGSCROLL_BUFFER_SIZE) {
-                mouse_report.h = buffer_x > 0 ? 1 : -1;
-                buffer_x = 0;
-            }
-            if (abs(buffer_y) > BK_POINTING_DEVICE_DRAGSCROLL_BUFFER_SIZE) {
-                mouse_report.v = buffer_y > 0 ? 1 : -1;
-                buffer_y = 0;
-            }
-        }
-        if(g_bkpd_config.is_cursor_enabled) {
-            // TODO cursor invert option
-            buffer_x += mouse_report.x;
-            buffer_y += mouse_report.y;
-            mouse_report.x = 0;
-            mouse_report.y = 0;
-            if(abs(buffer_x) > BK_POINTING_DEVICE_CURSOR_BUFFER_SIZE_X) {
-                argos_keycode_tap(buffer_x > 0 ? KC_RIGHT : KC_LEFT);
-                buffer_x = 0;
-                // only allow to go horizontal or vertical at a time
-                buffer_y = 0;
-            }
-            if(abs(buffer_y) > BK_POINTING_DEVICE_CURSOR_BUFFER_SIZE_Y) {
-                argos_keycode_tap(buffer_y > 0 ? KC_DOWN : KC_UP);
-                buffer_y = 0;
-                // only allow to go horizontal or vertical at a time
-                buffer_x = 0;
-            }
-        }
+    if (is_keyboard_master()) {
+        mouse_report = bkpd_process_active_mode(mouse_report);
         mouse_report = pointing_device_task_user(mouse_report);
     }
     return mouse_report;
@@ -409,18 +374,18 @@ report_mouse_t pointing_device_task_bk_pointing_device(report_mouse_t mouse_repo
 //  #    if defined(BK_POINTING_DEVICE_ENABLE) && !defined(NO_BK_POINTING_DEVICE_KEYCODES)
 /** \brief Whether SHIFT mod is enabled. */
 static bool has_shift_mod(void) {
-#        ifdef NO_ACTION_ONESHOT
+#ifdef NO_ACTION_ONESHOT
     return mod_config(get_mods()) & MOD_MASK_SHIFT;
-#        else
+#else
     return mod_config(get_mods() | get_oneshot_mods()) & MOD_MASK_SHIFT;
-#        endif // NO_ACTION_ONESHOT
+#endif // NO_ACTION_ONESHOT
 }
 //  #    endif // BK_POINTING_DEVICE_ENABLE && !NO_BK_POINTING_DEVICE_KEYCODES
 
 /**
-* \brief Process keycodes related to the pointing device.
-*/
-bool process_record_bk_pointing_device(uint16_t keycode, keyrecord_t* record) {
+ * \brief Process keycodes related to the pointing device.
+ */
+bool process_record_bk_pointing_device(uint16_t keycode, keyrecord_t *record) {
     if (!process_record_user(keycode, record)) {
         return false;
     }
@@ -428,58 +393,78 @@ bool process_record_bk_pointing_device(uint16_t keycode, keyrecord_t* record) {
     switch (keycode) {
         case DPI_MOD:
             if (record->event.pressed) {
+                // DPI change for all modes
                 // Step backward if shifted, forward otherwise.
-                bkpd_cycle_pointer_default_dpi(/* forward= */ !has_shift_mod());
-                changing_dpi_settings = true;
-                changing_sniping_dpi_settings = false;
+                bkpd_mode_current_cycle_dpi(/* forward= */ !has_shift_mod());
+                changing_dpi_settings         = true;  // TODO
+                changing_sniping_dpi_settings = false; // TODO
             }
             break;
         case DPI_RMOD:
             if (record->event.pressed) {
                 // Step forward if shifted, backward otherwise.
-                bkpd_cycle_pointer_default_dpi(/* forward= */ has_shift_mod());
-                changing_dpi_settings = true;
-                changing_sniping_dpi_settings = false;
+                bkpd_mode_current_cycle_dpi(/* forward= */ has_shift_mod());
+                changing_dpi_settings         = true;  // TODO
+                changing_sniping_dpi_settings = false; // TODO
             }
             break;
-        case S_D_MOD:
+        case S_D_MOD: // legacy
             if (record->event.pressed) {
                 // Step backward if shifted, forward otherwise.
-                bkpd_cycle_pointer_sniping_dpi(/* forward= */ !has_shift_mod());
-                changing_sniping_dpi_settings = true;
-                changing_dpi_settings = false;
+                bkpd_mode_legacy_sniping_cycle_dpi(/* forward= */ !has_shift_mod());
+                changing_sniping_dpi_settings = true;  // TODO
+                changing_dpi_settings         = false; // TODO
             }
             break;
-        case S_D_RMOD:
+        case S_D_RMOD: // legacy
             if (record->event.pressed) {
                 // Step forward if shifted, backward otherwise.
-                bkpd_cycle_pointer_sniping_dpi(/* forward= */ has_shift_mod());
-                changing_sniping_dpi_settings = true;
-                changing_dpi_settings = false;
+                bkpd_mode_legacy_sniping_cycle_dpi(/* forward= */ has_shift_mod());
+                changing_sniping_dpi_settings = true;  // TODO
+                changing_dpi_settings         = false; // TODO
             }
             break;
+        case INVX:
+            bkpd_mode_current_invert_axis(/* axis= */ 1);
+            break;
+        case INVY:
+            bkpd_mode_current_invert_axis(/* axis= */ 0);
+            break;
         case SNIPING:
-            bkpd_set_pointer_sniping_enabled(record->event.pressed);
+            if (record->event.pressed) {
+                bkpd_mode_set_active(MODE_SNIPING);
+            } else {
+                bkpd_mode_set_active(MODE_NORMAL);
+            }
             break;
         case SNP_TOG:
             if (record->event.pressed) {
-                bkpd_set_pointer_sniping_enabled(!bkpd_get_pointer_sniping_enabled());
+                bkpd_mode_toggle_active(MODE_SNIPING);
             }
             break;
         case DRGSCRL:
-            bkpd_set_pointer_dragscroll_enabled(record->event.pressed);
+            if (record->event.pressed) {
+                bkpd_mode_set_active(MODE_DRGSCRL);
+            } else {
+                bkpd_mode_set_active(MODE_NORMAL);
+            }
             break;
-        case CURSOR:
-                bkpd_set_pointer_cursor_enabled(record->event.pressed);
-                break;
         case DRG_TOG:
             if (record->event.pressed) {
-                bkpd_set_pointer_dragscroll_enabled(!bkpd_get_pointer_dragscroll_enabled());
+                bkpd_mode_toggle_active(MODE_DRGSCRL);
+            }
+            break;
+        case CURSOR:
+            bkpd_mode_set_active(MODE_CURSOR);
+            break;
+        case CUR_TOG:
+            if (record->event.pressed) {
+                bkpd_mode_toggle_active(MODE_CURSOR);
             }
             break;
         default:
-            changing_dpi_settings = false;
-            changing_sniping_dpi_settings = false;
+            changing_dpi_settings         = false; // TODO get rid of...
+            changing_sniping_dpi_settings = false; // TODO get rid of...
             break;
     }
     return true;
@@ -495,7 +480,8 @@ bool process_record_bk_pointing_device(uint16_t keycode, keyrecord_t* record) {
  * DRGSCRL/SNIPING are hold-to-enable; if the layer drops while they are
  * held, the key-up is resolved on layer 0 and the mode never turns off.
  */
-bool is_mouse_record_kb(uint16_t keycode, keyrecord_t* record) {
+// TODO test full range from introspection.h
+bool is_mouse_record_kb(uint16_t keycode, keyrecord_t *record) {
     switch (keycode) {
         case DPI_MOD:
         case DPI_RMOD:
@@ -517,54 +503,54 @@ bool bkpd_is_changing_dpi_settings(void) {
 }
 
 /*
-*   \brief Manage a visual indicator of the DPI/Sniping DPI that's being changed.
-*/
+ *   \brief Manage a visual indicator of the DPI/Sniping DPI that's being changed.
+ */
 #if defined(RGBLIGHT_ENABLE) || defined(RGB_MATRIX_ENABLE)
 bool rgb_matrix_indicators_advanced_bk_pointing_device(uint8_t led_min, uint8_t led_max) {
     const uint8_t layer = get_highest_layer(layer_state);
 
-    if(layer != AUTO_MOUSE_DEFAULT_LAYER) {
-        changing_dpi_settings = false;
+    if (layer != AUTO_MOUSE_DEFAULT_LAYER) {
+        changing_dpi_settings         = false;
         changing_sniping_dpi_settings = false;
         return true; // process further in parent function
     }
 
-    uint8_t steps_per_led = 1;
-    uint8_t max_steps = 0;
-    uint8_t current_step = 0;
-    uint16_t min_index = LED_DPI_INDICATOR_INDEX;
-    RGB color = {0, 255, 0};
+    uint8_t  steps_per_led = 1;
+    uint8_t  max_steps     = 0;
+    uint8_t  current_step  = 0;
+    uint16_t min_index     = LED_DPI_INDICATOR_INDEX;
+    RGB      color         = {0, 255, 0};
 
     // handle brightness
     color.r = (color.r * rgb_matrix_get_val()) / RGB_MATRIX_MAXIMUM_BRIGHTNESS;
     color.g = (color.g * rgb_matrix_get_val()) / RGB_MATRIX_MAXIMUM_BRIGHTNESS;
     color.b = (color.b * rgb_matrix_get_val()) / RGB_MATRIX_MAXIMUM_BRIGHTNESS;
 
-    if(changing_dpi_settings) {
+    if (changing_dpi_settings) {
         steps_per_led = 2;
-        max_steps = pow(2, BK_POINTING_DEVICE_MAX_DPI_BYTES) / steps_per_led;
-        current_step = g_bkpd_config.pointer_default_dpi;
-    } else if(changing_sniping_dpi_settings) {
+        max_steps     = pow(2, BK_POINTING_DEVICE_MAX_DPI_BYTES) / steps_per_led;
+        current_step  = g_bkpd_config.pointer_default_dpi;
+    } else if (changing_sniping_dpi_settings) {
         steps_per_led = 1;
-        max_steps = pow(2, BK_POINTING_DEVICE_MAX_SNIPING_DPI_BYTES) / steps_per_led;
-        current_step = g_bkpd_config.pointer_sniping_dpi;
+        max_steps     = pow(2, BK_POINTING_DEVICE_MAX_SNIPING_DPI_BYTES) / steps_per_led;
+        current_step  = g_bkpd_config.pointer_sniping_dpi;
     }
 
-    if(changing_dpi_settings || changing_sniping_dpi_settings) {
+    if (changing_dpi_settings || changing_sniping_dpi_settings) {
         // max leds we will light, we divide by 2 otherwise it's a lot of LEDs
-        for(int i = led_min; i < led_max; i++) {
+        for (int i = led_min; i < led_max; i++) {
             // TODO handle non-argos? (not really possible right now)
             // light up only the primary side.
             uint8_t index_symmetric = i % (RGBLIGHT_LED_COUNT / 2);
-       
+
             // handle LEDs if we are in range of the display bar
-            if( index_symmetric >= min_index && index_symmetric < min_index + max_steps) {
+            if (index_symmetric >= min_index && index_symmetric < min_index + max_steps) {
                 // handle last step (could be full or half brightness)
-                uint8_t last_step = min_index + current_step/steps_per_led;
-                if(index_symmetric == last_step) {
+                uint8_t last_step = min_index + current_step / steps_per_led;
+                if (index_symmetric == last_step) {
                     // half brightness for odd DPI steps (2 steps/LED)
-                    if(steps_per_led == 2 && current_step % steps_per_led == 0) {
-                        rgb_matrix_set_color(i, (color.r+255)/2, color.g/2, color.b/2);
+                    if (steps_per_led == 2 && current_step % steps_per_led == 0) {
+                        rgb_matrix_set_color(i, (color.r + 255) / 2, color.g / 2, color.b / 2);
                     }
                     // full brightness for sniping DPI and even DPI steps
                     else {
@@ -572,13 +558,13 @@ bool rgb_matrix_indicators_advanced_bk_pointing_device(uint8_t led_min, uint8_t 
                     }
                 }
                 // handle LEDs before the current step that are still active
-                else if(index_symmetric < last_step) {
+                else if (index_symmetric < last_step) {
                     rgb_matrix_set_color(i, color.r, color.g, color.b);
                 }
                 // handle other LEDs (not active but in display bar)
-                else{
+                else {
                     // default red
-                    RGB red = {255, 0, 0};                
+                    RGB red = {255, 0, 0};
                     // handle brightness
                     red.r = (red.r * rgb_matrix_get_val()) / RGB_MATRIX_MAXIMUM_BRIGHTNESS;
                     red.g = (red.g * rgb_matrix_get_val()) / RGB_MATRIX_MAXIMUM_BRIGHTNESS;
@@ -587,7 +573,7 @@ bool rgb_matrix_indicators_advanced_bk_pointing_device(uint8_t led_min, uint8_t 
                 }
             }
             // turn off all other leds
-            else{
+            else {
                 rgb_matrix_set_color(i, 0, 0, 0);
             }
         }
@@ -599,10 +585,10 @@ bool rgb_matrix_indicators_advanced_bk_pointing_device(uint8_t led_min, uint8_t 
 #endif
 
 /**
-* \brief Initialize the pointing device.
-* Manages memory space for Argos an non-Argos configuration.
-* Copies the defined invert x/y axis configuration into dynamic memory.
-*/
+ * \brief Initialize the pointing device.
+ * Manages memory space for Argos an non-Argos configuration.
+ * Copies the defined invert x/y axis configuration into dynamic memory.
+ */
 void keyboard_post_init_bk_pointing_device(void) {
     read_bkpd_config_from_eeprom();
     bkpd_maybe_update_cpi();
@@ -611,14 +597,14 @@ void keyboard_post_init_bk_pointing_device(void) {
 #else
     eeconfig_init_user();
 #endif
-    set_auto_mouse_layer(AUTO_MOUSE_DEFAULT_LAYER );
-    if(g_bkpd_config.auto_mouse_layer_enabled) {
+    set_auto_mouse_layer(AUTO_MOUSE_DEFAULT_LAYER);
+    if (g_bkpd_config.auto_mouse_layer_enabled) {
         set_auto_mouse_enable(true);
     } else {
         set_auto_mouse_enable(false);
     }
 
-    if(!g_bkpd_config.has_copied_qmk_config) {
+    if (!g_bkpd_config.has_copied_qmk_config) {
         g_bkpd_config.has_copied_qmk_config = true;
 #ifdef BK_POINTING_DEVICE_DRAGSCROLL_REVERSE_X
         g_bkpd_config.dragscroll_axis_invert_x = true;
@@ -630,12 +616,11 @@ void keyboard_post_init_bk_pointing_device(void) {
     }
 }
 
-
 /**
-* \brief Switch to precision mode on mouse layer if that option is enabled.
-*/
+ * \brief Switch to precision mode on mouse layer if that option is enabled.
+ */
 layer_state_t layer_state_set_bk_pointing_device(layer_state_t state) {
-    if(g_bkpd_config.auto_precision_on_mouse_layer_enabled) {
+    if (g_bkpd_config.auto_precision_on_mouse_layer_enabled) {
         bkpd_set_pointer_sniping_enabled(layer_state_cmp(state, AUTO_MOUSE_DEFAULT_LAYER));
     }
     return state;
@@ -663,7 +648,7 @@ bool bkpd_get_dragscroll_axis_invert_x(void) {
 
 bool bkpd_get_dragscroll_axis_invert_y(void) {
     return g_bkpd_config.dragscroll_axis_invert_y;
-}   
+}
 
 uint16_t bkpd_get_dragscroll_dpi(void) {
     // TODO
@@ -671,27 +656,27 @@ uint16_t bkpd_get_dragscroll_dpi(void) {
 }
 
 /**
-* \brief Auto mouse layer implementation for trackpads
-* We override the kb task, because QMK does not provide (as of coding this) a module-level override.
-*/
+ * \brief Auto mouse layer implementation for trackpads
+ * We override the kb task, because QMK does not provide (as of coding this) a module-level override.
+ */
 #ifdef POINTING_DEVICE_DRIVER_digitizer
 bool digitizer_task_kb(digitizer_t *const digitizer_state) {
-    report_mouse_t report = {0};
-    static digitizer_t last_report    = {0};
-    uint16_t delta_x = 0;
-    uint16_t delta_y = 0;
+    report_mouse_t     report      = {0};
+    static digitizer_t last_report = {0};
+    uint16_t           delta_x     = 0;
+    uint16_t           delta_y     = 0;
 
     if (!digitizer_task_user(digitizer_state)) {
         return false;
     }
 
     for (int i = 0; i < DIGITIZER_CONTACT_COUNT; i++) {
-#if DIGITIZER_FINGER_COUNT > 0
+#    if DIGITIZER_FINGER_COUNT > 0
         if (i < DIGITIZER_FINGER_COUNT) {
             delta_x += digitizer_state->contacts[i].x - last_report.contacts[i].x;
             delta_y += digitizer_state->contacts[i].y - last_report.contacts[i].y;
         }
-#endif
+#    endif
     }
 
     // "fake copy" it into the mouse report so that the auto mouse layer may trigger if needed
@@ -700,7 +685,7 @@ bool digitizer_task_kb(digitizer_t *const digitizer_state) {
     pointing_device_task_auto_mouse(report);
 
     last_report = *digitizer_state; // copy the state to the last report
-    
+
     // trigger a button state changed in master
     return true;
 }
