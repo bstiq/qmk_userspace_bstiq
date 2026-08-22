@@ -85,17 +85,14 @@ void write_bkpd_config_to_eeprom(void) {
             Argos command handling */
 
 bool bkpd_dispatch_command(uint8_t *command_id, uint8_t *command_data) {
-    printf("entered bkpd_dispatch_command\n");
 #if defined(COMMUNITY_MODULE_ARGOS_ENABLE)
     // We now switched to the command_id being argos_id_pointer.
     // However just in case, we will test for it and handle only if we got the correct command.
     if (*command_id == argos_id_pointer) {
-        printf("command_id is argos_id_pointer\n");
         command_id   = &(command_data[0]);
         command_data = &(command_data[1]);
         switch (*command_id) {
             case argos_id_pointer_command_id_get_device_info: {
-                printf("command_id is argos_id_pointer_command_id_get_device_info\n");
                 bkpd_build_pointing_device_info_command_data(command_data);
                 break;
             }
@@ -127,7 +124,6 @@ bool bkpd_dispatch_command(uint8_t *command_id, uint8_t *command_data) {
 }
 
 void bkpd_build_pointing_device_info_command_data(uint8_t *command_data) {
-    printf("entered bkpd_build_pointing_device_info_command_data\n");
     command_data[0] = pointing_device_type_unknown;
 #ifdef BK_HAS_POINTING_DEVICE
 #    if defined(POINTING_DEVICE_DRIVER_pmw3360) // Charybdis / Dilemma trackball

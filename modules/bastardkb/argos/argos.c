@@ -381,7 +381,6 @@ bool argos_handle_command(uint8_t *data, uint8_t length) {
 
 #ifdef BK_HAS_POINTING_DEVICE
     case argos_id_pointer: {
-        printf("argos get pointer device info\n");
         send_data = bkpd_dispatch_command(command_id, command_data);
    
         break;

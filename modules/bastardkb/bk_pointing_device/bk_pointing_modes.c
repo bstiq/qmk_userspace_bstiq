@@ -145,7 +145,7 @@ void bkpd_mode_cycle_dpi(uint8_t mode_id, bool forward) {
 
     // calculate new DPI
     uint16_t new_dpi = new_dpi_step * g_bkpd_config.modes_config[mode_id].dpi_per_step + BK_POINTING_DEVICE_MINIMUM_DEFAULT_DPI;
-
+    printf("new_dpi: %d\n", new_dpi);
     // if mode_id is active, update current DPI
     if (active_mode == &modes[mode_id]) {
         pointing_device_set_cpi(new_dpi);
@@ -232,19 +232,11 @@ void bkpd_mode_affect_dpi_from_bytes(uint8_t mode_id, uint16_t new_dpi) {
     if(mode_id > MODE_LAST)
         return;
 
-    // // new dpi is on 2 bytes:
-    // // get the old DPI:
-    uint16_t old_dpi = bkpd_mode_calculate_dpi_from_bytes(mode_id);
-    // // calculate the difference:
-    int16_t difference = new_dpi - old_dpi;
-    // // calculate how many steps we need, it could be negative
-    uint16_t default_dpi_config_step = g_bkpd_config.modes_config[mode_id].dpi_per_step;
-    int16_t  new_steps               = difference / default_dpi_config_step;
-    // // apply the steps one by one
-    bool forward = new_steps > 0;
-    for (int i = 0; i < abs(new_steps); i++) {
-        bkpd_mode_cycle_dpi(mode_id, forward);
-    }
+    // we can affect new DPI directly, no need to cycle through steps manually
+    g_bkpd_config.modes_config[mode_id].current_dpi_step = new_dpi / g_bkpd_config.modes_config[mode_id].dpi_per_step;
+    write_bkpd_config_to_eeprom();
+    pointing_device_set_cpi(new_dpi);
+
 }
 
 void bkpd_mode_current_affect_dpi(void) {
