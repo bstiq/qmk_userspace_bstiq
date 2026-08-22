@@ -23,6 +23,9 @@
 #define BK_POINTING_DEVICE_DRAGSCROLL_BUFFER_SIZE 6
 #define BK_POINTING_DEVICE_CURSOR_BUFFER_SIZE_X 40
 #define BK_POINTING_DEVICE_CURSOR_BUFFER_SIZE_Y 80
+#define BK_POINTING_DEVICE_BRIGHTNESS_BUFFER_SIZE 30
+#define BK_POINTING_DEVICE_ZOOM_BUFFER_SIZE 20
+#define BK_POINTING_DEVICE_VOLUME_BUFFER_SIZE 20
 
 #ifdef COMMUNITY_MODULE_ARGOS_ENABLE
 #    include "argos.h"
@@ -48,56 +51,105 @@ typedef struct {
 } pointing_mode_t;
 
 static pointing_mode_t modes[] = {
-    {.id = MODE_NORMAL, .process = NULL, .set_active = NULL, .invert_axis = NULL},
-    {.id = MODE_SNIPING, .process = NULL, .set_active = NULL, .invert_axis = NULL},
+    {.id = MODE_NORMAL, .process = NULL, .set_active = NULL, .invert_axis = NULL}, 
+    {.id = MODE_SNIPING, .process = NULL, .set_active = NULL, .invert_axis = NULL}, 
     {.id = MODE_DRAGSCROLL, .process = bkpd_mode_dragscroll_process, .set_active = NULL, .invert_axis = NULL},
-    {.id = MODE_CURSOR, .process = bkpd_mode_cursor_process, .set_active = NULL, .invert_axis = NULL}
-};
+     {.id = MODE_CURSOR, .process = bkpd_mode_cursor_process, .set_active = NULL, .invert_axis = NULL},
+     {.id = MODE_BRIGHTNESS, .process = bkpd_mode_brightness_process, .set_active = NULL, .invert_axis = NULL},
+     {.id = MODE_ZOOM, .process = bkpd_mode_zoom_process, .set_active = NULL, .invert_axis = NULL},
+     {.id = MODE_VOLUME, .process = bkpd_mode_volume_process, .set_active = NULL, .invert_axis = NULL}
+    };
 
 static pointing_mode_t *active_mode = &modes[0]; // reset on keyboard connection
+
+// manually defined from introspection
+// TODO figure out a better way to do this
+mode_map_t g_mode_map[] = {
+    {.keycode = 0x7E04, .mode = MODE_SNIPING},
+    {.keycode = 0x7E06, .mode = MODE_DRAGSCROLL},
+    {.keycode = 0x7E08, .mode = MODE_CURSOR},
+    {.keycode = 0x7E0A, .mode = MODE_BRIGHTNESS},
+    {.keycode = 0x7E0C, .mode = MODE_ZOOM},
+    {.keycode = 0x7E0E, .mode = MODE_VOLUME},
+};
 
 /* -----------------------------------------------------------------------------
             Helper functions for mode management */
 
 void bkpd_modes_init(void) {
-    g_bkpd_config.modes_config[MODE_NORMAL].max_dpi_steps = pow(2, BK_POINTING_DEVICE_MAX_DPI_BYTES);
-    g_bkpd_config.modes_config[MODE_SNIPING].max_dpi_steps = pow(2, BK_POINTING_DEVICE_MAX_SNIPING_DPI_BYTES);
+    g_bkpd_config.modes_config[MODE_NORMAL].max_dpi_steps     = pow(2, BK_POINTING_DEVICE_MAX_DPI_BYTES);
+    g_bkpd_config.modes_config[MODE_SNIPING].max_dpi_steps    = pow(2, BK_POINTING_DEVICE_MAX_SNIPING_DPI_BYTES);
     g_bkpd_config.modes_config[MODE_DRAGSCROLL].max_dpi_steps = pow(2, BK_POINTING_DEVICE_MAX_SNIPING_DPI_BYTES); // TODO
-    g_bkpd_config.modes_config[MODE_CURSOR].max_dpi_steps = pow(2, BK_POINTING_DEVICE_MAX_SNIPING_DPI_BYTES);// TODO
+    g_bkpd_config.modes_config[MODE_CURSOR].max_dpi_steps     = pow(2, BK_POINTING_DEVICE_MAX_SNIPING_DPI_BYTES); // TODO
 
-    g_bkpd_config.modes_config[MODE_NORMAL].dpi_per_step = BK_POINTING_DEVICE_DEFAULT_DPI_CONFIG_STEP;
-    g_bkpd_config.modes_config[MODE_SNIPING].dpi_per_step = BK_POINTING_DEVICE_SNIPING_DPI_CONFIG_STEP;
-    g_bkpd_config.modes_config[MODE_DRAGSCROLL].dpi_per_step = BK_POINTING_DEVICE_SNIPING_DPI_CONFIG_STEP;// TODO
-    g_bkpd_config.modes_config[MODE_CURSOR].dpi_per_step = BK_POINTING_DEVICE_SNIPING_DPI_CONFIG_STEP;// TODO
+    g_bkpd_config.modes_config[MODE_NORMAL].dpi_per_step     = BK_POINTING_DEVICE_DEFAULT_DPI_CONFIG_STEP;
+    g_bkpd_config.modes_config[MODE_SNIPING].dpi_per_step    = BK_POINTING_DEVICE_SNIPING_DPI_CONFIG_STEP;
+    g_bkpd_config.modes_config[MODE_DRAGSCROLL].dpi_per_step = BK_POINTING_DEVICE_SNIPING_DPI_CONFIG_STEP; // TODO
+    g_bkpd_config.modes_config[MODE_CURSOR].dpi_per_step     = BK_POINTING_DEVICE_SNIPING_DPI_CONFIG_STEP; // TODO
 
-    g_bkpd_config.modes_config[MODE_NORMAL].minimum_dpi = BK_POINTING_DEVICE_MINIMUM_DEFAULT_DPI;
-    g_bkpd_config.modes_config[MODE_SNIPING].minimum_dpi = BK_POINTING_DEVICE_MINIMUM_SNIPING_DPI;
+    g_bkpd_config.modes_config[MODE_NORMAL].minimum_dpi     = BK_POINTING_DEVICE_MINIMUM_DEFAULT_DPI;
+    g_bkpd_config.modes_config[MODE_SNIPING].minimum_dpi    = BK_POINTING_DEVICE_MINIMUM_SNIPING_DPI;
     g_bkpd_config.modes_config[MODE_DRAGSCROLL].minimum_dpi = BK_POINTING_DEVICE_MINIMUM_SNIPING_DPI; // TODO
-    g_bkpd_config.modes_config[MODE_CURSOR].minimum_dpi = BK_POINTING_DEVICE_MINIMUM_SNIPING_DPI; // TODO
-
+    g_bkpd_config.modes_config[MODE_CURSOR].minimum_dpi     = BK_POINTING_DEVICE_MINIMUM_SNIPING_DPI; // TODO
 }
 
-void bkpd_activate_mode_if_pressed_normal_otherwise(keyrecord_t *record, uint8_t mode) {
-    if (record->event.pressed) {
-        bkpd_mode_set_active(mode);
-    } else {
-        bkpd_mode_set_active(MODE_NORMAL);
+uint16_t bkpd_get_highest_mode_keycode(void) {
+    uint16_t highest_keycode = 0;
+    for(int i = 0; i < sizeof(g_mode_map) / sizeof(mode_map_t); i++) {
+        if(g_mode_map[i].keycode > highest_keycode) {
+            highest_keycode = g_mode_map[i].keycode;
+        }
     }
+    return highest_keycode;
+}
+
+uint16_t bkpd_get_lowest_mode_keycode(void) {
+    uint16_t lowest_keycode = bkpd_get_highest_mode_keycode();
+    for(int i = 0; i < sizeof(g_mode_map) / sizeof(mode_map_t); i++) {
+        if(g_mode_map[i].keycode < lowest_keycode) {
+            lowest_keycode = g_mode_map[i].keycode;
+        }
+    }
+    return lowest_keycode;
+}
+
+uint8_t bkpd_mode_from_keycode(uint16_t keycode) {
+    for(int i = 0; i < sizeof(g_mode_map) / sizeof(mode_map_t); i++) {
+        if(g_mode_map[i].keycode == keycode || // regular or toggle
+            g_mode_map[i].keycode + 1 == keycode) {
+            return g_mode_map[i].mode;
+        }
+    }
+    return -1;
 }
 
 uint8_t bkpd_mode_get_active_id(void) {
     return active_mode->id;
 }
 
+bool bkpd_mode_is_valid(uint8_t mode_id) {
+    // manually test for mode 0
+    if(mode_id == MODE_NORMAL) {
+        return true;
+    }
+    // otherwise, test in map
+    for(int i = 0; i < sizeof(g_mode_map) / sizeof(mode_map_t); i++) {
+        if(g_mode_map[i].mode == mode_id) {
+            return true;
+        }
+    }
+    return false;
+}
+
 void bkpd_mode_set_active(uint8_t id) {
-    uint8_t num_modes = sizeof(modes) / sizeof(pointing_mode_t);
-    if (id >= 0 && id < num_modes) {
-        if(active_mode != &modes[id]) {
-            if(active_mode->set_active != NULL) {
+    // test if the mode is valid: search in map
+    if (bkpd_mode_is_valid(id)) {
+        if (active_mode != &modes[id]) {
+            if (active_mode->set_active != NULL) {
                 active_mode->set_active(false); // disable current mode nonetheless, only one mode active at a time
             }
             active_mode = &modes[id];
-            if(active_mode->set_active != NULL) {
+            if (active_mode->set_active != NULL) {
                 active_mode->set_active(true);
             }
         }
@@ -108,15 +160,14 @@ void bkpd_mode_set_active(uint8_t id) {
 
 // activate the mode, or go back to normal mode.
 void bkpd_mode_toggle_active(uint8_t mode_id) {
-    uint8_t num_modes = sizeof(modes) / sizeof(pointing_mode_t);
-    if (mode_id < num_modes) {
+    if (bkpd_mode_is_valid(mode_id)) {
         // are we already in this mode?
         if (active_mode == &modes[mode_id]) {
             // go back to normal mode
             bkpd_mode_set_active(MODE_NORMAL);
             return;
         }
-        // else, we were in another mode
+        // else, we were in another mode - we can then switch up the mode.
         else {
             bkpd_mode_set_active(mode_id);
         }
@@ -125,10 +176,10 @@ void bkpd_mode_toggle_active(uint8_t mode_id) {
 
 report_mouse_t bkpd_process_active_mode(report_mouse_t mouse_report) {
     // invert x/y if needed, regardless of following processing
-    if(bkpd_mode_get_invert(active_mode->id, 0)) {
+    if (bkpd_mode_get_invert(active_mode->id, 0)) {
         mouse_report.x = -mouse_report.x;
     }
-    if(bkpd_mode_get_invert(active_mode->id, 1)) {
+    if (bkpd_mode_get_invert(active_mode->id, 1)) {
         mouse_report.y = -mouse_report.y;
     }
     if (active_mode->process != NULL) {
@@ -144,7 +195,7 @@ void bkpd_mode_cycle_dpi(uint8_t mode_id, bool forward) {
 
     // get the current dpi step
     uint8_t current_dpi_step = g_bkpd_config.modes_config[mode_id].current_dpi_step;
-    // calculate the new dpi step, could be higher than 256 (meh)    
+    // calculate the new dpi step, could be higher than 256 (meh)
     uint16_t new_dpi_step = current_dpi_step + (forward ? 1 : -1);
 
     // if the new dpi step is greater than the max dpi steps, wrap around with modulo
@@ -166,51 +217,41 @@ void bkpd_mode_cycle_dpi(uint8_t mode_id, bool forward) {
 }
 
 void bkpd_mode_set_invert(uint8_t mode_id, uint8_t axis_index, bool invert) {
-    if(mode_id > MODE_LAST)
-        return;
-    if(axis_index > 1)
-        return;
+    if (mode_id > MODE_LAST) return;
+    if (axis_index > 1) return;
     printf("setting invert for mode_id: %d, axis_index: %d, invert: %d\n", mode_id, axis_index, invert);
-    if(axis_index == 0) {
+    if (axis_index == 0) {
         g_bkpd_config.modes_config[mode_id].invert_x = invert;
-    }
-    else {
+    } else {
         g_bkpd_config.modes_config[mode_id].invert_y = invert;
     }
     write_bkpd_config_to_eeprom();
 }
 
 uint16_t bkpd_mode_get_minimum_dpi(uint8_t mode_id) {
-    if(mode_id > MODE_LAST)
-        return 0;
+    if (mode_id > MODE_LAST) return 0;
     return g_bkpd_config.modes_config[mode_id].minimum_dpi;
 }
 
 uint16_t bkpd_mode_get_max_dpi(uint8_t mode_id) {
-    if(mode_id > MODE_LAST)
-        return 0;
+    if (mode_id > MODE_LAST) return 0;
     return g_bkpd_config.modes_config[mode_id].max_dpi_steps * g_bkpd_config.modes_config[mode_id].dpi_per_step + g_bkpd_config.modes_config[mode_id].minimum_dpi;
 }
 
 bool bkpd_mode_get_invert(uint8_t mode_id, uint8_t axis_index) {
-    if(mode_id > MODE_LAST)
-        return false;
-    if(axis_index > 1)
-        return false;
-    if(axis_index == 0) {
+    if (mode_id > MODE_LAST) return false;
+    if (axis_index > 1) return false;
+    if (axis_index == 0) {
         return g_bkpd_config.modes_config[mode_id].invert_x;
-    }
-    else {
+    } else {
         return g_bkpd_config.modes_config[mode_id].invert_y;
     }
 }
 
 uint16_t bkpd_mode_get_dpi_per_step(uint8_t mode_id) {
-    if(mode_id > MODE_LAST)
-        return 0;
+    if (mode_id > MODE_LAST) return 0;
     return g_bkpd_config.modes_config[mode_id].dpi_per_step;
 }
-
 
 /* -----------------------------------------------------------------------------
             Helper functions for current active mode */
@@ -226,35 +267,30 @@ void bkpd_mode_current_invert_axis(bool axis) {
 }
 
 uint16_t bkpd_mode_calculate_dpi_from_bytes(uint8_t mode_id) {
-    if(mode_id > MODE_LAST)
-        return 0;
+    if (mode_id > MODE_LAST) return 0;
 
     return g_bkpd_config.modes_config[mode_id].current_dpi_step * g_bkpd_config.modes_config[mode_id].dpi_per_step + g_bkpd_config.modes_config[mode_id].minimum_dpi;
 }
 
 void bkpd_mode_affect_dpi(uint8_t mode_id) {
-    if(mode_id > MODE_LAST)
-        return;
+    if (mode_id > MODE_LAST) return;
 
     uint16_t new_dpi = bkpd_mode_calculate_dpi_from_bytes(mode_id);
-    if(new_dpi != pointing_device_get_cpi()) {
+    if (new_dpi != pointing_device_get_cpi()) {
         pointing_device_set_cpi(new_dpi);
     }
 }
 
 void bkpd_mode_affect_dpi_from_bytes(uint8_t mode_id, uint16_t new_dpi) {
-    if(mode_id > MODE_LAST)
-        return;
+    if (mode_id > MODE_LAST) return;
 
     // clamp
-    if(new_dpi > bkpd_mode_get_max_dpi(mode_id))
-        new_dpi = bkpd_mode_get_max_dpi(mode_id);
+    if (new_dpi > bkpd_mode_get_max_dpi(mode_id)) new_dpi = bkpd_mode_get_max_dpi(mode_id);
 
-    if(new_dpi < bkpd_mode_get_minimum_dpi(mode_id))
-        new_dpi = bkpd_mode_get_minimum_dpi(mode_id);
-)
+    if (new_dpi < bkpd_mode_get_minimum_dpi(mode_id)) new_dpi = bkpd_mode_get_minimum_dpi(mode_id);
+
     g_bkpd_config.modes_config[mode_id].current_dpi_step = new_dpi / g_bkpd_config.modes_config[mode_id].dpi_per_step;
-    write_bkpd_config_to_eeprom();
+write_bkpd_config_to_eeprom();
 }
 
 void bkpd_mode_current_affect_dpi(void) {
@@ -282,11 +318,6 @@ void bkpd_mode_legacy_sniping_cycle_dpi(bool forward) {
 /* -----------------------------------------------------------------------------
             Dragscroll mode */
 
-// TODO: reset buffer on mode change
-// TODO invert options
-// TODO DPI options
-// Helper function to accumulate deltas in buffer
-
 report_mouse_t bkpd_mode_dragscroll_process(report_mouse_t mouse_report) {
     static int16_t buffer_x = 0;
     static int16_t buffer_y = 0;
@@ -295,11 +326,11 @@ report_mouse_t bkpd_mode_dragscroll_process(report_mouse_t mouse_report) {
     mouse_report.y = 0;
     if (abs(buffer_x) > BK_POINTING_DEVICE_DRAGSCROLL_BUFFER_SIZE) {
         mouse_report.h = buffer_x > 0 ? 1 : -1;
-        buffer_x = 0;
+        buffer_x       = 0;
     }
     if (abs(buffer_y) > BK_POINTING_DEVICE_DRAGSCROLL_BUFFER_SIZE) {
         mouse_report.v = buffer_y > 0 ? 1 : -1;
-        buffer_y = 0;
+        buffer_y       = 0;
     }
     return mouse_report;
 }
@@ -307,16 +338,13 @@ report_mouse_t bkpd_mode_dragscroll_process(report_mouse_t mouse_report) {
 /* -----------------------------------------------------------------------------
             Cursor mode */
 
-// TODO: reset buffer on mode change
-// TODO invert options
-// TODO DPI options
 report_mouse_t bkpd_mode_cursor_process(report_mouse_t mouse_report) {
     static int16_t buffer_x = 0;
     static int16_t buffer_y = 0;
     accumulate_buffer(&buffer_x, &buffer_y, mouse_report.x, mouse_report.y);
     mouse_report.x = 0;
     mouse_report.y = 0;
-    if(abs(buffer_x) > BK_POINTING_DEVICE_CURSOR_BUFFER_SIZE_X) {
+    if (abs(buffer_x) > BK_POINTING_DEVICE_CURSOR_BUFFER_SIZE_X) {
 #ifdef COMMUNITY_MODULE_ARGOS_ENABLE
         argos_keycode_tap(buffer_x > 0 ? KC_RIGHT : KC_LEFT);
 #else
@@ -326,7 +354,7 @@ report_mouse_t bkpd_mode_cursor_process(report_mouse_t mouse_report) {
         // only allow to go horizontal or vertical at a time
         buffer_y = 0;
     }
-    if(abs(buffer_y) > BK_POINTING_DEVICE_CURSOR_BUFFER_SIZE_Y) {
+    if (abs(buffer_y) > BK_POINTING_DEVICE_CURSOR_BUFFER_SIZE_Y) {
 #ifdef COMMUNITY_MODULE_ARGOS_ENABLE
         argos_keycode_tap(buffer_y > 0 ? KC_DOWN : KC_UP);
 #else
@@ -335,6 +363,70 @@ report_mouse_t bkpd_mode_cursor_process(report_mouse_t mouse_report) {
         buffer_y = 0;
         // only allow to go horizontal or vertical at a time
         buffer_x = 0;
+    }
+    return mouse_report;
+}
+
+/* -----------------------------------------------------------------------------
+            Brightness mode */
+
+report_mouse_t bkpd_mode_brightness_process(report_mouse_t mouse_report) {
+#if defined(RGBLIGHT_ENABLE) || defined(RGB_MATRIX_ENABLE)
+    static int16_t buffer_x = 0;
+    static int16_t buffer_y = 0;
+    accumulate_buffer(&buffer_x, &buffer_y, mouse_report.x, mouse_report.y);
+    mouse_report.x = 0; 
+    mouse_report.y = 0;
+    if (abs(buffer_y) > BK_POINTING_DEVICE_BRIGHTNESS_BUFFER_SIZE) {
+        (buffer_y > 0)? rgb_matrix_decrease_val() : rgb_matrix_increase_val();
+        buffer_y = 0;
+    }
+    return mouse_report;
+#endif
+}
+
+/* -----------------------------------------------------------------------------
+            Zoom mode */
+
+report_mouse_t bkpd_mode_zoom_process(report_mouse_t mouse_report) {
+    static int16_t buffer_x = 0;
+    static int16_t buffer_y = 0;
+    accumulate_buffer(&buffer_x, &buffer_y, mouse_report.x, mouse_report.y);
+    mouse_report.x = 0;
+    mouse_report.y = 0;
+    // tap Control + plus or minus
+    if (abs(buffer_y) > BK_POINTING_DEVICE_ZOOM_BUFFER_SIZE) {
+#ifdef COMMUNITY_MODULE_ARGOS_ENABLE
+        argos_keycode_down(KC_LCTL);
+        argos_keycode_tap(buffer_y < 0 ? KC_PLUS : KC_MINUS);
+        argos_keycode_up(KC_LCTL);
+#else
+        register_code(KC_LCTL);
+        tap_code(buffer_y < 0 ? KC_PLUS : KC_MINUS);
+        unregister_code(KC_LCTL);
+#endif
+        buffer_y = 0;
+    }
+    return mouse_report;
+}
+
+/* -----------------------------------------------------------------------------
+            Volume mode */
+
+report_mouse_t bkpd_mode_volume_process(report_mouse_t mouse_report) {
+    static int16_t buffer_x = 0;
+    static int16_t buffer_y = 0;
+    accumulate_buffer(&buffer_x, &buffer_y, mouse_report.x, mouse_report.y);
+    mouse_report.x = 0;
+    mouse_report.y = 0;
+    // tap volume keys
+    if (abs(buffer_y) > BK_POINTING_DEVICE_VOLUME_BUFFER_SIZE) {
+#ifdef COMMUNITY_MODULE_ARGOS_ENABLE
+        argos_keycode_tap(buffer_y < 0 ? KC_VOLU : KC_VOLD);
+#else
+        tap_code(buffer_y < 0 ? KC_VOLU : KC_VOLD);
+#endif
+        buffer_y = 0;
     }
     return mouse_report;
 }

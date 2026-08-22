@@ -15,7 +15,7 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
  
- #pragma once
+#pragma once
 
 #ifdef POINTING_DEVICE_DRIVER_digitizer
 #include "digitizer.h"

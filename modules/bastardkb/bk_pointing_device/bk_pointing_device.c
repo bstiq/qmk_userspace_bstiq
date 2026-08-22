@@ -230,6 +230,32 @@ bool process_record_bk_pointing_device(uint16_t keycode, keyrecord_t *record) {
         return false;
     }
 
+    // try to process trigger/toggle mode keycodes first
+    uint8_t mode = bkpd_mode_from_keycode(keycode);
+    if(mode >= 0) {
+        // figure out if we have a press or a toggle
+        uint8_t min_keycode = bkpd_get_lowest_mode_keycode();
+        // pressed keycode
+        if((keycode - min_keycode) % 2 == 0) {
+            if(record->event.pressed) {
+                bkpd_mode_set_active(mode);
+                printf("bkpd_mode_set_active: %d\n", mode);
+            }
+            else {
+                printf("bkpd_mode_set_active: MODE_NORMAL\n");
+                bkpd_mode_set_active(MODE_NORMAL);
+            }
+        } 
+        // toggle keycode
+        else {
+            if(record->event.pressed) {
+                bkpd_mode_toggle_active(mode);
+            }
+        }
+        return true;
+    }
+
+    // process other keycodes
     switch (keycode) {
         // Generic and legacy ----------------------------------------
         case DPI_MOD:
@@ -268,38 +294,11 @@ bool process_record_bk_pointing_device(uint16_t keycode, keyrecord_t *record) {
             bkpd_mode_current_invert_axis(/* axis= */ 0);
             break;
 
-        // Sniping mode ----------------------------------------
-        case SNIPING:
-            bkpd_activate_mode_if_pressed_normal_otherwise(record, MODE_SNIPING);
-            break;
-        case SNP_TOG:
-            if (record->event.pressed) {
-                bkpd_mode_toggle_active(MODE_SNIPING);
-            }
-            break;
-
-        // Dragscroll mode ----------------------------------------
-        case DRGSCRL:
-            bkpd_activate_mode_if_pressed_normal_otherwise(record, MODE_DRAGSCROLL);
-            break;
-        case DRG_TOG:
-            if (record->event.pressed) {
-                bkpd_mode_toggle_active(MODE_DRAGSCROLL);
-            }
-            break;
-
-        // Cursor mode ----------------------------------------
-        case CURSOR:
-            bkpd_activate_mode_if_pressed_normal_otherwise(record, MODE_CURSOR);
-            break;
-        case CUR_TOG:
-            if (record->event.pressed) {
-                bkpd_mode_toggle_active(MODE_CURSOR);
-            }
-            break;
+        // End pointer modes ----------------------------------------
         default:
             changing_dpi_settings_for_mode = -1; // reset
             break;
+
     }
     return true;
 }

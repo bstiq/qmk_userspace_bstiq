@@ -19,6 +19,11 @@
 
  #include QMK_KEYBOARD_H
  
+typedef struct {
+    uint16_t keycode;
+    uint8_t mode;
+} mode_map_t;
+
  enum {
     MODE_NORMAL = 0,
     MODE_SNIPING = 1,
@@ -26,11 +31,11 @@
     MODE_CURSOR = 3,
     MODE_BRIGHTNESS = 4,
     MODE_ZOOM = 5,
-    MODE_LAST = 6
+    MODE_VOLUME = 6,
+    MODE_LAST = 7
 };
 
 void bkpd_mode_set_active(uint8_t id);
-void bkpd_mode_toggle_active(uint8_t id);
 report_mouse_t bkpd_process_active_mode(report_mouse_t mouse_report);
 void bkpd_mode_current_cycle_dpi(bool forward);
 void bkpd_mode_current_invert_axis(bool axis);
@@ -49,4 +54,10 @@ uint16_t bkpd_mode_get_minimum_dpi(uint8_t mode_id);
 uint16_t bkpd_mode_get_max_dpi(uint8_t mode_id);
 bool bkpd_mode_get_invert(uint8_t mode_id, uint8_t axis_index);
 uint16_t bkpd_mode_get_dpi_per_step(uint8_t mode_id);
-void bkpd_activate_mode_if_pressed_normal_otherwise(keyrecord_t *record, uint8_t mode);
+report_mouse_t bkpd_mode_brightness_process(report_mouse_t mouse_report);
+report_mouse_t bkpd_mode_zoom_process(report_mouse_t mouse_report);
+uint16_t bkpd_get_highest_mode_keycode(void);
+uint16_t bkpd_get_lowest_mode_keycode(void);
+uint8_t bkpd_mode_from_keycode(uint16_t keycode);
+void bkpd_mode_toggle_active(uint8_t mode_id);
+bool bkpd_mode_is_valid(uint8_t mode_id);
