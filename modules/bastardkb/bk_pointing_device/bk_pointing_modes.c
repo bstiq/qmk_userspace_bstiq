@@ -268,7 +268,7 @@ void bkpd_mode_legacy_sniping_cycle_dpi(bool forward) {
 
 void bkpd_mode_normal_set_active(bool active) {
     if (active) {
-        if(g_bkpd_config.auto_mouse_layer_enabled) {
+        if(g_bkpd_config.auto_precision_on_mouse_layer_enabled) {
             bkpd_mode_affect_dpi(MODE_SNIPING);
         }
         else{

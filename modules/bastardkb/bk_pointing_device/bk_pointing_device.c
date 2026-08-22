@@ -116,6 +116,16 @@ bool bkpd_dispatch_command(uint8_t *command_id, uint8_t *command_data) {
                 bkpd_mode_set_invert(mode_id, axis_index, invert);
                 break;
             }
+            case argos_id_pointer_command_id_set_auto_mouse_layer_enabled: {
+                bool auto_mouse_layer_enabled = command_data[0];
+                bkpd_set_auto_mouse_layer_enabled(auto_mouse_layer_enabled);
+                break;
+            }
+            case argos_id_pointer_command_id_set_auto_precision_on_mouse_layer_enabled: {
+                bool auto_precision_on_mouse_layer_enabled = command_data[0];
+                bkpd_set_auto_precision_on_mouse_layer_enabled(auto_precision_on_mouse_layer_enabled);
+                break;
+            }
             default:
                 break;
         }
@@ -170,72 +180,6 @@ void bkpd_build_mode_config_command_data(uint8_t mode_id, uint8_t *command_data)
 #endif
 }
 
-/** \brief Return the current value of the pointer's default DPI. */
-uint16_t bkpd_get_pointer_default_dpi(void) {
-    // TODO: delete this whole function, move it into a generic getter for the webapp to read mode config one by one
-    // return (uint16_t)g_bkpd_config.pointer_default_dpi * bkpd_get_default_dpi_config_step() + bkpd_get_minimum_default_dpi();
-    return 0;
-}
-
-/** \brief Set the appropriate DPI for the input config. */
-// TODO get rid of this function
-static void bkpd_maybe_update_cpi(void) {
-    // if (g_bkpd_config.is_dragscroll_enabled) {
-    //     pointing_device_set_cpi(BK_POINTING_DEVICE_DRAGSCROLL_DPI);
-    // } else if (g_bkpd_config.is_sniping_enabled) {
-    //     pointing_device_set_cpi(bkpd_get_pointer_sniping_dpi());
-    // } else {
-    //     pointing_device_set_cpi(bkpd_get_pointer_default_dpi());
-    // }
-}
-
-/**
- * \brief Update the pointer's default DPI to the next or previous step.
- *
- * Increases the DPI value if `forward` is `true`, decreases it otherwise.
- * The increment/decrement steps are equal to BK_BK_POINTING_DEVICE_DEFAULT_DPI_CONFIG_STEP.
- */
-// TODO get rid of this function
-void bkpd_cycle_pointer_default_dpi_noeeprom(bool forward) {
-    // g_bkpd_config.pointer_default_dpi += forward ? 1 : -1;
-    // bkpd_maybe_update_cpi();
-}
-
-void bkpd_cycle_pointer_default_dpi(bool forward) {
-    bkpd_cycle_pointer_default_dpi_noeeprom(forward);
-    write_bkpd_config_to_eeprom();
-}
-
-/**
- * \brief Update the pointer's sniper-mode DPI to the next or previous step.
- *
- * Increases the DPI value if `forward` is `true`, decreases it otherwise.
- * The increment/decrement steps are equal to BK_POINTING_DEVICE_SNIPING_DPI_CONFIG_STEP.
- */
-// TODO get rid of this function
-void bkpd_cycle_pointer_sniping_dpi_noeeprom(bool forward) {
-    // g_bkpd_config.pointer_sniping_dpi += forward ? 1 : -1;
-    // bkpd_maybe_update_cpi();
-}
-
-// TODO get rid of this function
-void bkpd_cycle_pointer_sniping_dpi(bool forward) {
-    // bkpd_cycle_pointer_sniping_dpi_noeeprom(forward);
-    // write_bkpd_config_to_eeprom();
-}
-
-bool bkpd_get_pointer_sniping_enabled(void) {
-    // return g_bkpd_config.is_sniping_enabled;
-    // TODO
-    return 0;
-}
-
-void bkpd_set_pointer_sniping_enabled(bool enable) {
-    // g_bkpd_config.is_sniping_enabled = enable;
-    // bkpd_maybe_update_cpi();
-    // TODO
-}
-
 void bkpd_set_auto_mouse_layer_enabled(bool enabled) {
     g_bkpd_config.auto_mouse_layer_enabled = enabled;
     set_auto_mouse_enable(enabled);
@@ -244,7 +188,6 @@ void bkpd_set_auto_mouse_layer_enabled(bool enabled) {
 
 void bkpd_set_auto_precision_on_mouse_layer_enabled(bool enabled) {
     g_bkpd_config.auto_precision_on_mouse_layer_enabled = enabled;
-    bkpd_maybe_update_cpi();
 }
 
 bool bkpd_get_auto_mouse_layer_enabled(void) {
@@ -253,44 +196,6 @@ bool bkpd_get_auto_mouse_layer_enabled(void) {
 
 bool bkpd_get_auto_precision_on_mouse_layer_enabled(void) {
     return g_bkpd_config.auto_precision_on_mouse_layer_enabled;
-}
-
-// TODO: remove this function
-bool bkpd_get_pointer_dragscroll_enabled(void) {
-    // return g_bkpd_config.is_dragscroll_enabled;
-    // TODO
-    return 0;
-}
-
-// TODO: remove this function
-void bkpd_set_pointer_dragscroll_enabled(bool enable) {
-    // g_bkpd_config.is_dragscroll_enabled = enable;
-    // TODO
-    // bkpd_maybe_update_cpi();
-}
-
-// TODO: remove this function
-void bkpd_set_pointer_cursor_enabled(bool enable) {
-    // g_bkpd_config.is_cursor_enabled = enable;
-}
-
-// TODO remove all this stuff into generic
-uint16_t bkpd_get_minimum_default_dpi(void) {
-    // return BK_POINTING_DEVICE_MINIMUM_DEFAULT_DPI;
-    // TODO
-    return 0;
-}
-
-uint16_t bkpd_get_default_dpi_config_step(void) {
-    // return BK_POINTING_DEVICE_DEFAULT_DPI_CONFIG_STEP;
-    // TODO
-    return 0;
-}
-
-uint16_t bkpd_get_sniping_dpi_config_step(void) {
-    // return BK_POINTING_DEVICE_SNIPING_DPI_CONFIG_STEP;
-    // TODO
-    return 0;
 }
 
 /**
@@ -530,7 +435,6 @@ bool rgb_matrix_indicators_advanced_bk_pointing_device(uint8_t led_min, uint8_t 
  */
 void keyboard_post_init_bk_pointing_device(void) {
     read_bkpd_config_from_eeprom();
-    bkpd_maybe_update_cpi();
     // initialize mode configs
     bkpd_modes_init();
     // TODO: replace with per-module memory management
