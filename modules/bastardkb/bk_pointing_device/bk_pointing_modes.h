@@ -25,7 +25,8 @@
     MODE_DRAGSCROLL = 2,
     MODE_CURSOR = 3,
     MODE_BRIGHTNESS = 4,
-    MODE_LAST = 5
+    MODE_ZOOM = 5,
+    MODE_LAST = 6
 };
 
 void bkpd_mode_set_active(uint8_t id);

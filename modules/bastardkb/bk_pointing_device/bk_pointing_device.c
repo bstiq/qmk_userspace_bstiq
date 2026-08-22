@@ -109,6 +109,7 @@ bool bkpd_dispatch_command(uint8_t *command_id, uint8_t *command_data) {
                 break;
             }
             case argos_id_pointer_command_id_set_invert: {
+                printf("command_id is argos_id_pointer_command_id_set_invert\n");
                 uint8_t mode_id = command_data[0];
                 uint8_t axis_index = command_data[1];
                 bool invert = command_data[2];
@@ -173,13 +174,6 @@ void bkpd_build_mode_config_command_data(uint8_t mode_id, uint8_t *command_data)
 uint16_t bkpd_get_pointer_default_dpi(void) {
     // TODO: delete this whole function, move it into a generic getter for the webapp to read mode config one by one
     // return (uint16_t)g_bkpd_config.pointer_default_dpi * bkpd_get_default_dpi_config_step() + bkpd_get_minimum_default_dpi();
-    return 0;
-}
-
-/** \brief Return the current value of the pointer's sniper-mode DPI. */
-uint16_t bkpd_get_pointer_sniping_dpi(void) {
-    // TODO: delete this whole function, move it into a generic getter for the webapp to read mode config one by one
-    // return (uint16_t)g_bkpd_config.pointer_sniping_dpi * bkpd_get_sniping_dpi_config_step() + bkpd_get_minimum_sniping_dpi();
     return 0;
 }
 
@@ -289,12 +283,6 @@ uint16_t bkpd_get_minimum_default_dpi(void) {
 
 uint16_t bkpd_get_default_dpi_config_step(void) {
     // return BK_POINTING_DEVICE_DEFAULT_DPI_CONFIG_STEP;
-    // TODO
-    return 0;
-}
-
-uint16_t bkpd_get_minimum_sniping_dpi(void) {
-    // return BK_POINTING_DEVICE_MINIMUM_SNIPING_DPI;
     // TODO
     return 0;
 }

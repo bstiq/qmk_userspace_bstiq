@@ -118,6 +118,13 @@ void bkpd_mode_toggle_active(uint8_t id) {
 }
 
 report_mouse_t bkpd_process_active_mode(report_mouse_t mouse_report) {
+    // invert x/y if needed, regardless of following processing
+    if(bkpd_mode_get_invert(active_mode->id, 0)) {
+        mouse_report.x = -mouse_report.x;
+    }
+    if(bkpd_mode_get_invert(active_mode->id, 1)) {
+        mouse_report.y = -mouse_report.y;
+    }
     if (active_mode->process != NULL) {
         return active_mode->process(mouse_report);
     }
@@ -157,6 +164,7 @@ void bkpd_mode_set_invert(uint8_t mode_id, uint8_t axis_index, bool invert) {
         return;
     if(axis_index > 1)
         return;
+    printf("setting invert for mode_id: %d, axis_index: %d, invert: %d\n", mode_id, axis_index, invert);
     if(axis_index == 0) {
         g_bkpd_config.modes_config[mode_id].invert_x = invert;
     }
