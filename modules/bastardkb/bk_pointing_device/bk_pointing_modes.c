@@ -246,11 +246,15 @@ void bkpd_mode_affect_dpi_from_bytes(uint8_t mode_id, uint16_t new_dpi) {
     if(mode_id > MODE_LAST)
         return;
 
-    // we can affect new DPI directly, no need to cycle through steps manually
+    // clamp
+    if(new_dpi > bkpd_mode_get_max_dpi(mode_id))
+        new_dpi = bkpd_mode_get_max_dpi(mode_id);
+
+    if(new_dpi < bkpd_mode_get_minimum_dpi(mode_id))
+        new_dpi = bkpd_mode_get_minimum_dpi(mode_id);
+)
     g_bkpd_config.modes_config[mode_id].current_dpi_step = new_dpi / g_bkpd_config.modes_config[mode_id].dpi_per_step;
     write_bkpd_config_to_eeprom();
-    pointing_device_set_cpi(new_dpi);
-
 }
 
 void bkpd_mode_current_affect_dpi(void) {
