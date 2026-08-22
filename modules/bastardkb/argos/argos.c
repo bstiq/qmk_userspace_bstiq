@@ -380,13 +380,10 @@ bool argos_handle_command(uint8_t *data, uint8_t length) {
     }
 
 #ifdef BK_HAS_POINTING_DEVICE
-    case argos_id_set_sniping_dpi:
-    case argos_id_set_dpi:
-    case argos_id_set_auto_mouse_layer_enabled:
-    case argos_id_set_auto_precision_on_mouse_layer_enabled:
-    case argos_id_set_axis_invert:
-    case argos_id_get_pointing_device_info: {
-        send_data = bkpd_dispatch_command(*command_id, &command_data);
+    case argos_id_pointer: {
+        printf("argos get pointer device info\n");
+        send_data = bkpd_dispatch_command(command_id, command_data);
+   
         break;
     }
 

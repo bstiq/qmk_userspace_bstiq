@@ -84,7 +84,6 @@ uint8_t bkpd_mode_get_active_id(void) {
 void bkpd_mode_set_active(uint8_t id) {
     uint8_t num_modes = sizeof(modes) / sizeof(pointing_mode_t);
     if (id >= 0 && id < num_modes) {
-        printf("Setting mode %d active\n", id);
         if(active_mode != &modes[id]) {
             if(active_mode->set_active != NULL) {
                 active_mode->set_active(false); // disable current mode nonetheless, only one mode active at a time
@@ -153,6 +152,51 @@ void bkpd_mode_cycle_dpi(uint8_t mode_id, bool forward) {
     }
 }
 
+void bkpd_mode_set_invert(uint8_t mode_id, uint8_t axis_index, bool invert) {
+    if(mode_id > MODE_LAST)
+        return;
+    if(axis_index > 1)
+        return;
+    if(axis_index == 0) {
+        g_bkpd_config.modes_config[mode_id].invert_x = invert;
+    }
+    else {
+        g_bkpd_config.modes_config[mode_id].invert_y = invert;
+    }
+    write_bkpd_config_to_eeprom();
+}
+
+uint16_t bkpd_mode_get_minimum_dpi(uint8_t mode_id) {
+    if(mode_id > MODE_LAST)
+        return 0;
+    return g_bkpd_config.modes_config[mode_id].minimum_dpi;
+}
+
+uint16_t bkpd_mode_get_max_dpi(uint8_t mode_id) {
+    if(mode_id > MODE_LAST)
+        return 0;
+    return g_bkpd_config.modes_config[mode_id].max_dpi_steps * g_bkpd_config.modes_config[mode_id].dpi_per_step + g_bkpd_config.modes_config[mode_id].minimum_dpi;
+}
+
+bool bkpd_mode_get_invert(uint8_t mode_id, uint8_t axis_index) {
+    if(mode_id > MODE_LAST)
+        return false;
+    if(axis_index > 1)
+        return false;
+    if(axis_index == 0) {
+        return g_bkpd_config.modes_config[mode_id].invert_x;
+    }
+    else {
+        return g_bkpd_config.modes_config[mode_id].invert_y;
+    }
+}
+
+uint16_t bkpd_mode_get_dpi_per_step(uint8_t mode_id) {
+    if(mode_id > MODE_LAST)
+        return 0;
+    return g_bkpd_config.modes_config[mode_id].dpi_per_step;
+}
+
 
 /* -----------------------------------------------------------------------------
             Helper functions for current active mode */
@@ -167,15 +211,49 @@ void bkpd_mode_current_invert_axis(bool axis) {
     }
 }
 
+uint16_t bkpd_mode_calculate_dpi_from_bytes(uint8_t mode_id) {
+    if(mode_id > MODE_LAST)
+        return 0;
+
+    return g_bkpd_config.modes_config[mode_id].current_dpi_step * g_bkpd_config.modes_config[mode_id].dpi_per_step + g_bkpd_config.modes_config[mode_id].minimum_dpi;
+}
+
 void bkpd_mode_affect_dpi(uint8_t mode_id) {
-    uint16_t new_dpi = g_bkpd_config.modes_config[mode_id].current_dpi_step * g_bkpd_config.modes_config[mode_id].dpi_per_step + g_bkpd_config.modes_config[mode_id].minimum_dpi;
+    if(mode_id > MODE_LAST)
+        return;
+
+    uint16_t new_dpi = bkpd_mode_calculate_dpi_from_bytes(mode_id);
     if(new_dpi != pointing_device_get_cpi()) {
         pointing_device_set_cpi(new_dpi);
     }
 }
 
+void bkpd_mode_affect_dpi_from_bytes(uint8_t mode_id, uint16_t new_dpi) {
+    if(mode_id > MODE_LAST)
+        return;
+
+    // // new dpi is on 2 bytes:
+    // // get the old DPI:
+    uint16_t old_dpi = bkpd_mode_calculate_dpi_from_bytes(mode_id);
+    // // calculate the difference:
+    int16_t difference = new_dpi - old_dpi;
+    // // calculate how many steps we need, it could be negative
+    uint16_t default_dpi_config_step = g_bkpd_config.modes_config[mode_id].dpi_per_step;
+    int16_t  new_steps               = difference / default_dpi_config_step;
+    // // apply the steps one by one
+    bool forward = new_steps > 0;
+    for (int i = 0; i < abs(new_steps); i++) {
+        bkpd_mode_cycle_dpi(mode_id, forward);
+    }
+}
+
 void bkpd_mode_current_affect_dpi(void) {
     bkpd_mode_affect_dpi(active_mode->id);
+}
+
+static void accumulate_buffer(int16_t *buffer_x, int16_t *buffer_y, int8_t dx, int8_t dy) {
+    *buffer_x += dx;
+    *buffer_y += dy;
 }
 
 /* -----------------------------------------------------------------------------
@@ -214,11 +292,12 @@ void bkpd_mode_sniping_set_active(bool active) {
 // TODO: reset buffer on mode change
 // TODO invert options
 // TODO DPI options
+// Helper function to accumulate deltas in buffer
+
 report_mouse_t bkpd_mode_dragscroll_process(report_mouse_t mouse_report) {
     static int16_t buffer_x = 0;
     static int16_t buffer_y = 0;
-    buffer_x += mouse_report.x;
-    buffer_y += mouse_report.y;
+    accumulate_buffer(&buffer_x, &buffer_y, mouse_report.x, mouse_report.y);
     mouse_report.x = 0;
     mouse_report.y = 0;
     if (abs(buffer_x) > BK_POINTING_DEVICE_DRAGSCROLL_BUFFER_SIZE) {
@@ -241,8 +320,7 @@ report_mouse_t bkpd_mode_dragscroll_process(report_mouse_t mouse_report) {
 report_mouse_t bkpd_mode_cursor_process(report_mouse_t mouse_report) {
     static int16_t buffer_x = 0;
     static int16_t buffer_y = 0;
-    buffer_x += mouse_report.x;
-    buffer_y += mouse_report.y;
+    accumulate_buffer(&buffer_x, &buffer_y, mouse_report.x, mouse_report.y);
     mouse_report.x = 0;
     mouse_report.y = 0;
     if(abs(buffer_x) > BK_POINTING_DEVICE_CURSOR_BUFFER_SIZE_X) {

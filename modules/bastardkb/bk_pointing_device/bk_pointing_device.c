@@ -44,7 +44,7 @@
 
 ASSERT_COMMUNITY_MODULES_MIN_API_VERSION(1, 0, 0);
 
-bkpd_config_t g_bkpd_config                 = {0};
+bkpd_config_t g_bkpd_config                  = {0};
 static int8_t changing_dpi_settings_for_mode = -1;
 
 /**
@@ -62,9 +62,6 @@ static void read_bkpd_config_from_eeprom(void) {
 #else
     g_bkpd_config.raw = eeconfig_read_kb() & 0xff;
 #endif
-    // TODO
-    // g_bkpd_config.is_dragscroll_enabled = false;
-    // g_bkpd_config.is_sniping_enabled    = false;
 }
 
 /**
@@ -84,105 +81,95 @@ void write_bkpd_config_to_eeprom(void) {
 #endif
 }
 
-bool bkpd_dispatch_command(const uint8_t command_id, uint8_t **command_data) {
-    bool send_data = true;
+/* -----------------------------------------------------------------------------
+            Argos command handling */
+
+bool bkpd_dispatch_command(uint8_t *command_id, uint8_t *command_data) {
+    printf("entered bkpd_dispatch_command\n");
 #if defined(COMMUNITY_MODULE_ARGOS_ENABLE)
-    switch (command_id) {
-        case argos_id_get_pointing_device_info: {
-            bkpd_build_pointing_device_info_command_data(command_data);
-            break;
+    // We now switched to the command_id being argos_id_pointer.
+    // However just in case, we will test for it and handle only if we got the correct command.
+    if (*command_id == argos_id_pointer) {
+        printf("command_id is argos_id_pointer\n");
+        command_id   = &(command_data[0]);
+        command_data = &(command_data[1]);
+        switch (*command_id) {
+            case argos_id_pointer_command_id_get_device_info: {
+                printf("command_id is argos_id_pointer_command_id_get_device_info\n");
+                bkpd_build_pointing_device_info_command_data(command_data);
+                break;
+            }
+            case argos_id_pointer_command_id_get_mode_info: {
+                uint8_t mode_id = command_data[0];
+                command_data = &(command_data[1]);
+                bkpd_build_mode_config_command_data(mode_id, command_data);
+                break;
+            }
+            case argos_id_pointer_command_id_set_dpi: {
+                uint8_t mode_id = command_data[0];
+                uint16_t new_dpi = command_data[1] | (command_data[2] << 8);
+                bkpd_mode_affect_dpi_from_bytes(mode_id, new_dpi);
+                break;
+            }
+            case argos_id_pointer_command_id_set_invert: {
+                uint8_t mode_id = command_data[0];
+                uint8_t axis_index = command_data[1];
+                bool invert = command_data[2];
+                bkpd_mode_set_invert(mode_id, axis_index, invert);
+                break;
+            }
+            default:
+                break;
         }
-        case argos_id_set_dpi: {
-            // uint16_t new_dpi = (*command_data)[0] | ((*command_data)[1] << 8);
-            // TODO
-            // bkpd_set_pointer_default_dpi(new_dpi);
-            break;
-        }
-        case argos_id_set_sniping_dpi: {
-            // uint16_t new_dpi = (*command_data)[0] | ((*command_data)[1] << 8);
-            // TODO
-            // bkpd_set_pointer_sniping_dpi(new_dpi);
-            break;
-        }
-        case argos_id_set_auto_mouse_layer_enabled: {
-            bkpd_set_auto_mouse_layer_enabled((*command_data)[0]);
-            break;
-        }
-        case argos_id_set_auto_precision_on_mouse_layer_enabled: {
-            bkpd_set_auto_precision_on_mouse_layer_enabled((*command_data)[0]);
-            break;
-        }
-        case argos_id_set_axis_invert: {
-            // TODO +++ change axis_index to 2 bytes, and implement 2 different protocols in Webapp.
-            // const uint8_t axis_index = (*command_data)[0];
-            // const bool    invert     = (*command_data)[1];
-            // if (axis_index == 0) {
-            //     bkpd_set_dragscroll_axis_invert_x(invert);
-            // } else if (axis_index == 1) {
-            //     bkpd_set_dragscroll_axis_invert_y(invert);
-            // }
-            break;
-        }
-        case argos_id_set_dragscroll_dpi: {
-            // TODO
-            break;
-        }
-        default:
-            break;
     }
 #endif
-    return send_data;
+    return true; // always ack command
 }
 
-void bkpd_build_pointing_device_info_command_data(uint8_t **command_data) {
-    (*command_data)[0] = pointing_device_type_unknown;
+void bkpd_build_pointing_device_info_command_data(uint8_t *command_data) {
+    printf("entered bkpd_build_pointing_device_info_command_data\n");
+    command_data[0] = pointing_device_type_unknown;
 #ifdef BK_HAS_POINTING_DEVICE
 #    if defined(POINTING_DEVICE_DRIVER_pmw3360) // Charybdis / Dilemma trackball
-    (*command_data)[0] = pointing_device_type_trackball;
+
+    command_data[0] = pointing_device_type_trackball;
 #    elif defined(POINTING_DEVICE_DRIVER_digitizer)           // Dilemma v3 / procyon
-    (*command_data)[0] = pointing_device_type_trackpad_procyon;
+    command_data[0] = pointing_device_type_trackpad_procyon;
 #    elif defined(POINTING_DEVICE_DRIVER_cirque_pinnacle_spi) // Dilemma v2 / cirque
-    (*command_data)[0] = pointing_device_type_trackpad_cirque;
+    command_data[0] = pointing_device_type_trackpad_cirque;
 #    endif
-    if ((*command_data)[0] != pointing_device_type_unknown) {
-        // pointing dpi is up to 400+16*200 = 3600, 2 bytes
-        (*command_data)[1] = bkpd_get_pointer_default_dpi() & 0xFF;
-        (*command_data)[2] = (bkpd_get_pointer_default_dpi() >> 8) & 0xFF;
-        // minimum default DPI is 400, 2 bytes
-        uint16_t minimum_default_dpi = bkpd_get_minimum_default_dpi();
-        (*command_data)[3]           = minimum_default_dpi & 0xFF;
-        (*command_data)[4]           = (minimum_default_dpi >> 8) & 0xFF;
-        // default DPI config step is 200, so one byte, but we use 2 just in
-        // case
-        uint16_t default_dpi_config_step = bkpd_get_default_dpi_config_step();
-        (*command_data)[5]               = default_dpi_config_step & 0xFF;
-        (*command_data)[6]               = (default_dpi_config_step >> 8) & 0xFF;
-        // sniping DPI is up to 200+4*100 = 600, 2 bytes
-        (*command_data)[7] = bkpd_get_pointer_sniping_dpi() & 0xFF;
-        (*command_data)[8] = (bkpd_get_pointer_sniping_dpi() >> 8) & 0xFF;
-        // mininmum sniping dpi is 200, but ue use 2 bytes ju) in case
-        uint16_t minimum_sniping_dpi = bkpd_get_minimum_sniping_dpi();
-        (*command_data)[9]           = minimum_sniping_dpi & 0xFF;
-        (*command_data)[10]          = (minimum_sniping_dpi >> 8) & 0xFF;
-        // sniping DPI config step is 100, so one byte, but we use 2 just in
-        // case
-        uint16_t sniping_dpi_config_step = bkpd_get_sniping_dpi_config_step();
-        (*command_data)[11]              = sniping_dpi_config_step & 0xFF;
-        (*command_data)[12]              = (sniping_dpi_config_step >> 8) & 0xFF;
-        // pointing DPI max steps is 16, so one byte is plenty
-        // this is hardcoded here as we can't read it from dilemma.c (private
-        // config structure dilemma_config_t)
-        (*command_data)[13] = 16;
-        // sniping DPI max steps is 4, so one byte is plenty
-        // this is hardcoded here as we can't read it from dilemma.c (private
-        // config structure dilemma_config_t)
-        (*command_data)[14] = 4;
-        (*command_data)[15] = bkpd_get_auto_mouse_layer_enabled();
-        (*command_data)[16] = bkpd_get_auto_precision_on_mouse_layer_enabled();
-        (*command_data)[17] = bkpd_get_dragscroll_axis_invert_x();
-        (*command_data)[18] = bkpd_get_dragscroll_axis_invert_y();
-        // TODO dragscroll DPI
+    if (command_data[0] != pointing_device_type_unknown) {
+        for (uint8_t i = 1; i < 15; i++) {
+            // legacy - set to 0.
+            command_data[i] = 0;
+        }
+        command_data[15] = bkpd_get_auto_mouse_layer_enabled();
+        command_data[16] = bkpd_get_auto_precision_on_mouse_layer_enabled();
     }
+#endif
+}
+
+void bkpd_build_mode_config_command_data(uint8_t mode_id, uint8_t *command_data) {
+#ifdef BK_HAS_POINTING_DEVICE
+    // DPI
+    uint16_t dpi       = bkpd_mode_calculate_dpi_from_bytes(mode_id);
+    command_data[0] = dpi & 0xFF;
+    command_data[1] = (dpi >> 8) & 0xFF;
+    // Minimum DPI
+    uint16_t minimum_dpi = bkpd_mode_get_minimum_dpi(mode_id);
+    command_data[2]   = minimum_dpi & 0xFF;
+    command_data[3]   = (minimum_dpi >> 8) & 0xFF;
+    // DPI per step
+    uint16_t dpi_per_step = bkpd_mode_get_dpi_per_step(mode_id);
+    command_data[4]    = dpi_per_step & 0xFF;
+    // MAX DPI
+    uint16_t max_dpi   = bkpd_mode_get_max_dpi(mode_id);
+    command_data[5] = max_dpi & 0xFF;
+    command_data[6] = (max_dpi >> 8) & 0xFF;
+    // Invert X axis
+    command_data[7] = bkpd_mode_get_invert(mode_id, 0);
+    // Invert Y axis
+    command_data[8] = bkpd_mode_get_invert(mode_id, 1);
 #endif
 }
 
@@ -193,46 +180,11 @@ uint16_t bkpd_get_pointer_default_dpi(void) {
     return 0;
 }
 
-/** \brief Set the current value of the pointer's default DPI. */
-void bkpd_set_pointer_default_dpi(uint16_t new_dpi) {
-    // // new dpi is on 2 bytes:
-    // // get the old DPI:
-    // uint16_t old_dpi = bkpd_get_pointer_default_dpi();
-    // // calculate the difference:
-    // int16_t difference = new_dpi - old_dpi;
-    // // calculate how many steps we need, it could be negative
-    // uint16_t default_dpi_config_step = bkpd_get_default_dpi_config_step();
-    // int16_t  new_steps               = difference / default_dpi_config_step;
-    // // apply the steps one by one
-    // bool forward = new_steps > 0;
-    // for (int i = 0; i < abs(new_steps); i++) {
-    //     bkpd_cycle_pointer_default_dpi(forward);
-    // }
-    
-    // TODO: delete this whole function, move it into a generic setter for the webapp to set mode config
-}
-
 /** \brief Return the current value of the pointer's sniper-mode DPI. */
 uint16_t bkpd_get_pointer_sniping_dpi(void) {
     // TODO: delete this whole function, move it into a generic getter for the webapp to read mode config one by one
     // return (uint16_t)g_bkpd_config.pointer_sniping_dpi * bkpd_get_sniping_dpi_config_step() + bkpd_get_minimum_sniping_dpi();
     return 0;
-}
-
-void bkpd_set_pointer_sniping_dpi(uint16_t new_dpi) {
-    // TODO: delete this whole function, move it into a generic setter for the webapp to set mode config
-    // // get the old DPI:
-    // uint16_t old_dpi = bkpd_get_pointer_sniping_dpi();
-    // // calculate the difference:
-    // int16_t difference = new_dpi - old_dpi;
-    // // calculate how many steps we need, it could be negative
-    // uint16_t sniping_dpi_config_step = bkpd_get_sniping_dpi_config_step();
-    // int8_t   new_steps               = difference / sniping_dpi_config_step;
-    // // apply the steps one by one
-    // bool forward = new_steps > 0;
-    // for (int i = 0; i < abs(new_steps); i++) {
-    //     bkpd_cycle_pointer_sniping_dpi(forward);
-    // }
 }
 
 /** \brief Set the appropriate DPI for the input config. */
@@ -433,7 +385,7 @@ bool process_record_bk_pointing_device(uint16_t keycode, keyrecord_t *record) {
         case INVY:
             bkpd_mode_current_invert_axis(/* axis= */ 0);
             break;
-            
+
         // Sniping mode ----------------------------------------
         case SNIPING:
             bkpd_activate_mode_if_pressed_normal_otherwise(record, MODE_SNIPING);
@@ -501,7 +453,7 @@ bool is_mouse_record_kb(uint16_t keycode, keyrecord_t *record) {
 /*
  *   \brief Manage a visual indicator of the DPI/Sniping DPI that's being changed.
  */
- // TODO
+// TODO
 #if defined(RGBLIGHT_ENABLE) || defined(RGB_MATRIX_ENABLE)
 
 bool bkpd_is_changing_dpi_settings(void) {
@@ -528,14 +480,14 @@ bool rgb_matrix_indicators_advanced_bk_pointing_device(uint8_t led_min, uint8_t 
         color.g = (color.g * rgb_matrix_get_val()) / RGB_MATRIX_MAXIMUM_BRIGHTNESS;
         color.b = (color.b * rgb_matrix_get_val()) / RGB_MATRIX_MAXIMUM_BRIGHTNESS;
 
-        max_steps     = g_bkpd_config.modes_config[changing_dpi_settings_for_mode].max_dpi_steps;
-        current_step  = g_bkpd_config.modes_config[changing_dpi_settings_for_mode].current_dpi_step;
+        max_steps    = g_bkpd_config.modes_config[changing_dpi_settings_for_mode].max_dpi_steps;
+        current_step = g_bkpd_config.modes_config[changing_dpi_settings_for_mode].current_dpi_step;
 
         // up to 15 LEDs MAX, otherwise we divide by 15
-        if(max_steps > 15) {
+        if (max_steps > 15) {
             uint8_t modulo = max_steps / 15 + 1; // round up
-            steps_per_led = modulo;
-            max_steps = max_steps  / modulo + max_steps % 15;
+            steps_per_led  = modulo;
+            max_steps      = max_steps / modulo + max_steps % 15;
         } else {
             steps_per_led = 1;
         }
@@ -612,12 +564,12 @@ void keyboard_post_init_bk_pointing_device(void) {
     if (!g_bkpd_config.has_copied_qmk_config) {
         g_bkpd_config.has_copied_qmk_config = true;
         // TODO
-// #ifdef BK_POINTING_DEVICE_DRAGSCROLL_REVERSE_X
-//         g_bkpd_config.dragscroll_axis_invert_x = true;
-// #endif
-// #ifdef BK_POINTING_DEVICE_DRAGSCROLL_REVERSE_Y
-//         g_bkpd_config.dragscroll_axis_invert_y = true;
-// #endif
+        // #ifdef BK_POINTING_DEVICE_DRAGSCROLL_REVERSE_X
+        //         g_bkpd_config.dragscroll_axis_invert_x = true;
+        // #endif
+        // #ifdef BK_POINTING_DEVICE_DRAGSCROLL_REVERSE_Y
+        //         g_bkpd_config.dragscroll_axis_invert_y = true;
+        // #endif
         write_bkpd_config_to_eeprom();
     }
 }
@@ -673,30 +625,30 @@ uint16_t bkpd_get_dragscroll_dpi(void) {
 #ifdef POINTING_DEVICE_DRIVER_digitizer
 bool digitizer_task_kb(digitizer_t *const digitizer_state) {
     // TODO
-//     report_mouse_t     report      = {0};
-//     static digitizer_t last_report = {0};
-//     uint16_t           delta_x     = 0;
-//     uint16_t           delta_y     = 0;
+    //     report_mouse_t     report      = {0};
+    //     static digitizer_t last_report = {0};
+    //     uint16_t           delta_x     = 0;
+    //     uint16_t           delta_y     = 0;
 
-//     if (!digitizer_task_user(digitizer_state)) {
-//         return false;
-//     }
+    //     if (!digitizer_task_user(digitizer_state)) {
+    //         return false;
+    //     }
 
-//     for (int i = 0; i < DIGITIZER_CONTACT_COUNT; i++) {
-// #    if DIGITIZER_FINGER_COUNT > 0
-//         if (i < DIGITIZER_FINGER_COUNT) {
-//             delta_x += digitizer_state->contacts[i].x - last_report.contacts[i].x;
-//             delta_y += digitizer_state->contacts[i].y - last_report.contacts[i].y;
-//         }
-// #    endif
-//     }
+    //     for (int i = 0; i < DIGITIZER_CONTACT_COUNT; i++) {
+    // #    if DIGITIZER_FINGER_COUNT > 0
+    //         if (i < DIGITIZER_FINGER_COUNT) {
+    //             delta_x += digitizer_state->contacts[i].x - last_report.contacts[i].x;
+    //             delta_y += digitizer_state->contacts[i].y - last_report.contacts[i].y;
+    //         }
+    // #    endif
+    //     }
 
-//     // "fake copy" it into the mouse report so that the auto mouse layer may trigger if needed
-//     report.x = delta_x;
-//     report.y = delta_y;
-//     pointing_device_task_auto_mouse(report);
+    //     // "fake copy" it into the mouse report so that the auto mouse layer may trigger if needed
+    //     report.x = delta_x;
+    //     report.y = delta_y;
+    //     pointing_device_task_auto_mouse(report);
 
-//     last_report = *digitizer_state; // copy the state to the last report
+    //     last_report = *digitizer_state; // copy the state to the last report
 
     // trigger a button state changed in master
     return true;

@@ -1,7 +1,35 @@
-#pragma once
+/*
+ * Copyright 2026 Quentin LEBASTARD <bstkbd@gmail.com>
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Publicw License as published by
+ * the Free Software Foundation, either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ */
+ 
+ #pragma once
 
 #ifdef POINTING_DEVICE_DRIVER_digitizer
 #include "digitizer.h"
+#endif
+
+#include "bk_pointing_modes.h"
+
+#ifdef COMMUNITY_MODULE_ARGOS_ENABLE
+enum argos_pointer_command_id {
+    argos_id_pointer_command_id_get_mode_info = 0x01,
+    argos_id_pointer_command_id_set_dpi = 0x02,
+    argos_id_pointer_command_id_set_invert = 0x03,
+    argos_id_pointer_command_id_get_device_info = 0x04,
+};
 #endif
 
 typedef union {
@@ -19,26 +47,17 @@ typedef union {
 typedef union {
     uint8_t raw;
     struct {
-        // uint8_t pointer_default_dpi : BK_POINTING_DEVICE_MAX_DPI_BYTES;         // 16 steps available.
-        // uint8_t pointer_sniping_dpi : BK_POINTING_DEVICE_MAX_SNIPING_DPI_BYTES; // 4 steps available.
-        // bool    is_dragscroll_enabled : 1;
-        // bool    is_sniping_enabled : 1;
         bool    auto_mouse_layer_enabled : 1;
         bool    auto_precision_on_mouse_layer_enabled : 1;
-        // bool    dragscroll_axis_invert_x : 1;
-        // bool    dragscroll_axis_invert_y : 1;
         bool    has_copied_qmk_config : 1;
-        // bool    is_cursor_enabled : 1;
-        bkpd_mode_t modes_config[4]; // !!! TODO CHANGE THIS WHEN WE ADD MORE MODES
+        bkpd_mode_t modes_config[MODE_LAST];
         uint8_t active_mode;
-        // TODO add invert/DPI for all modes
-        // TODO for dpi: init at #define value
     } __attribute__((packed));
 } bkpd_config_t;
 
 // TODO get rid of unused functions here
-bool bkpd_dispatch_command(const uint8_t command_id, uint8_t **command_data);
-void bkpd_build_pointing_device_info_command_data(uint8_t **command_data);
+bool bkpd_dispatch_command(uint8_t *command_id, uint8_t *command_data);
+void bkpd_build_pointing_device_info_command_data(uint8_t *command_data);
 uint16_t bkpd_get_pointer_default_dpi(void);
 void bkpd_set_pointer_default_dpi(uint16_t new_dpi);
 void bkpd_cycle_pointer_default_dpi(bool forward);
@@ -69,6 +88,9 @@ uint16_t bkpd_get_sniping_dpi_config_step(void);
 void bkpd_set_pointer_cursor_enabled(bool enable);
 void write_bkpd_config_to_eeprom(void);
 bool bkpd_is_changing_dpi_settings(void);
+
+// TODO gate this behing community_module_argos_enabled
+void bkpd_build_mode_config_command_data(uint8_t mode_id, uint8_t *command_data);
 
 #ifdef POINTING_DEVICE_DRIVER_digitizer
 bool digitizer_task_kb(digitizer_t *const digitizer_state);

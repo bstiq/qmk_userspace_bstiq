@@ -15,13 +15,17 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+ #pragma once
+
  #include QMK_KEYBOARD_H
  
  enum {
     MODE_NORMAL = 0,
     MODE_SNIPING = 1,
     MODE_DRAGSCROLL = 2,
-    MODE_CURSOR = 3
+    MODE_CURSOR = 3,
+    MODE_BRIGHTNESS = 4,
+    MODE_LAST = 5
 };
 
 void bkpd_mode_set_active(uint8_t id);
@@ -39,3 +43,10 @@ void bkpd_mode_cycle_dpi(uint8_t mode_id, bool forward);
 void bkpd_mode_affect_dpi(uint8_t mode_id);
 void bkpd_mode_current_affect_dpi(void);
 uint8_t bkpd_mode_get_active_id(void);
+void bkpd_mode_affect_dpi_from_bytes(uint8_t mode_id, uint16_t new_dpi);
+uint16_t bkpd_mode_calculate_dpi_from_bytes(uint8_t mode_id);
+void bkpd_mode_set_invert(uint8_t mode_id, uint8_t axis_index, bool invert);
+uint16_t bkpd_mode_get_minimum_dpi(uint8_t mode_id);
+uint16_t bkpd_mode_get_max_dpi(uint8_t mode_id);
+bool bkpd_mode_get_invert(uint8_t mode_id, uint8_t axis_index);
+uint16_t bkpd_mode_get_dpi_per_step(uint8_t mode_id);
