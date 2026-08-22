@@ -33,12 +33,12 @@
 
 #define BK_POINTING_DEVICE_MINIMUM_DEFAULT_DPI 400
 #define BK_POINTING_DEVICE_DEFAULT_DPI_CONFIG_STEP 200
-#define BK_POINTING_DEVICE_MINIMUM_SNIPING_DPI 200
+#define BK_POINTING_DEVICE_MINIMUM_SNIPING_DPI 100
 #define BK_POINTING_DEVICE_SNIPING_DPI_CONFIG_STEP 100
 #define BK_POINTING_DEVICE_DRAGSCROLL_DPI 100
 
 #define BK_POINTING_DEVICE_MAX_DPI_BYTES 4
-#define BK_POINTING_DEVICE_MAX_SNIPING_DPI_BYTES 2
+#define BK_POINTING_DEVICE_MAX_SNIPING_DPI_BYTES 4
 
 extern bkpd_config_t g_bkpd_config;
 
@@ -77,20 +77,18 @@ mode_map_t g_mode_map[] = {
             Helper functions for mode management */
 
 void bkpd_modes_init(void) {
+
+    // Init to default values
+    for(int i = 0; i < MODE_LAST; i++) {
+        g_bkpd_config.modes_config[i].max_dpi_steps     = pow(2, BK_POINTING_DEVICE_MAX_SNIPING_DPI_BYTES);
+        g_bkpd_config.modes_config[i].dpi_per_step     = BK_POINTING_DEVICE_SNIPING_DPI_CONFIG_STEP;
+        g_bkpd_config.modes_config[i].minimum_dpi     = BK_POINTING_DEVICE_MINIMUM_SNIPING_DPI;
+    }
+
+    // edit specific values
     g_bkpd_config.modes_config[MODE_NORMAL].max_dpi_steps     = pow(2, BK_POINTING_DEVICE_MAX_DPI_BYTES);
-    g_bkpd_config.modes_config[MODE_SNIPING].max_dpi_steps    = pow(2, BK_POINTING_DEVICE_MAX_SNIPING_DPI_BYTES);
-    g_bkpd_config.modes_config[MODE_DRAGSCROLL].max_dpi_steps = pow(2, BK_POINTING_DEVICE_MAX_SNIPING_DPI_BYTES); // TODO
-    g_bkpd_config.modes_config[MODE_CURSOR].max_dpi_steps     = pow(2, BK_POINTING_DEVICE_MAX_SNIPING_DPI_BYTES); // TODO
-
     g_bkpd_config.modes_config[MODE_NORMAL].dpi_per_step     = BK_POINTING_DEVICE_DEFAULT_DPI_CONFIG_STEP;
-    g_bkpd_config.modes_config[MODE_SNIPING].dpi_per_step    = BK_POINTING_DEVICE_SNIPING_DPI_CONFIG_STEP;
-    g_bkpd_config.modes_config[MODE_DRAGSCROLL].dpi_per_step = BK_POINTING_DEVICE_SNIPING_DPI_CONFIG_STEP; // TODO
-    g_bkpd_config.modes_config[MODE_CURSOR].dpi_per_step     = BK_POINTING_DEVICE_SNIPING_DPI_CONFIG_STEP; // TODO
-
     g_bkpd_config.modes_config[MODE_NORMAL].minimum_dpi     = BK_POINTING_DEVICE_MINIMUM_DEFAULT_DPI;
-    g_bkpd_config.modes_config[MODE_SNIPING].minimum_dpi    = BK_POINTING_DEVICE_MINIMUM_SNIPING_DPI;
-    g_bkpd_config.modes_config[MODE_DRAGSCROLL].minimum_dpi = BK_POINTING_DEVICE_MINIMUM_SNIPING_DPI; // TODO
-    g_bkpd_config.modes_config[MODE_CURSOR].minimum_dpi     = BK_POINTING_DEVICE_MINIMUM_SNIPING_DPI; // TODO
 }
 
 uint16_t bkpd_get_highest_mode_keycode(void) {
@@ -154,7 +152,7 @@ void bkpd_mode_set_active(uint8_t id) {
             }
         }
         // affect DPI
-        bkpd_mode_current_affect_dpi();
+        bkpd_mode_apply_dpi(id);
     }
 }
 
@@ -188,13 +186,14 @@ report_mouse_t bkpd_process_active_mode(report_mouse_t mouse_report) {
     return mouse_report;
 }
 
+// used by argos
 void bkpd_mode_cycle_dpi(uint8_t mode_id, bool forward) {
     // compare bytes etc - TODO
     // get the current mode's max dpi
     uint8_t max_dpi_steps = g_bkpd_config.modes_config[mode_id].max_dpi_steps;
 
     // get the current dpi step
-    uint8_t current_dpi_step = g_bkpd_config.modes_config[mode_id].current_dpi_step;
+    uint8_t current_dpi_step = bkpd_mode_get_dpi_per_step(mode_id);
     // calculate the new dpi step, could be higher than 256 (meh)
     uint16_t new_dpi_step = current_dpi_step + (forward ? 1 : -1);
 
@@ -208,7 +207,7 @@ void bkpd_mode_cycle_dpi(uint8_t mode_id, bool forward) {
     write_bkpd_config_to_eeprom();
 
     // calculate new DPI
-    uint16_t new_dpi = new_dpi_step * g_bkpd_config.modes_config[mode_id].dpi_per_step + BK_POINTING_DEVICE_MINIMUM_DEFAULT_DPI;
+    uint16_t new_dpi = new_dpi_step * bkpd_mode_get_dpi_per_step(mode_id) + BK_POINTING_DEVICE_MINIMUM_DEFAULT_DPI;
     printf("new_dpi: %d\n", new_dpi);
     // if mode_id is active, update current DPI
     if (active_mode == &modes[mode_id]) {
@@ -217,7 +216,7 @@ void bkpd_mode_cycle_dpi(uint8_t mode_id, bool forward) {
 }
 
 void bkpd_mode_set_invert(uint8_t mode_id, uint8_t axis_index, bool invert) {
-    if (mode_id > MODE_LAST) return;
+    if(!bkpd_mode_is_valid(mode_id)) return;
     if (axis_index > 1) return;
     printf("setting invert for mode_id: %d, axis_index: %d, invert: %d\n", mode_id, axis_index, invert);
     if (axis_index == 0) {
@@ -229,17 +228,17 @@ void bkpd_mode_set_invert(uint8_t mode_id, uint8_t axis_index, bool invert) {
 }
 
 uint16_t bkpd_mode_get_minimum_dpi(uint8_t mode_id) {
-    if (mode_id > MODE_LAST) return 0;
+    if(!bkpd_mode_is_valid(mode_id)) return 0;
     return g_bkpd_config.modes_config[mode_id].minimum_dpi;
 }
 
 uint16_t bkpd_mode_get_max_dpi(uint8_t mode_id) {
-    if (mode_id > MODE_LAST) return 0;
-    return g_bkpd_config.modes_config[mode_id].max_dpi_steps * g_bkpd_config.modes_config[mode_id].dpi_per_step + g_bkpd_config.modes_config[mode_id].minimum_dpi;
+    if(!bkpd_mode_is_valid(mode_id)) return 0;
+    return g_bkpd_config.modes_config[mode_id].max_dpi_steps * bkpd_mode_get_dpi_per_step(mode_id) + bkpd_mode_get_minimum_dpi(mode_id);
 }
 
 bool bkpd_mode_get_invert(uint8_t mode_id, uint8_t axis_index) {
-    if (mode_id > MODE_LAST) return false;
+    if(!bkpd_mode_is_valid(mode_id)) return false;
     if (axis_index > 1) return false;
     if (axis_index == 0) {
         return g_bkpd_config.modes_config[mode_id].invert_x;
@@ -249,7 +248,7 @@ bool bkpd_mode_get_invert(uint8_t mode_id, uint8_t axis_index) {
 }
 
 uint16_t bkpd_mode_get_dpi_per_step(uint8_t mode_id) {
-    if (mode_id > MODE_LAST) return 0;
+    if(!bkpd_mode_is_valid(mode_id)) return 0;
     return g_bkpd_config.modes_config[mode_id].dpi_per_step;
 }
 
@@ -266,35 +265,42 @@ void bkpd_mode_current_invert_axis(bool axis) {
     }
 }
 
-uint16_t bkpd_mode_calculate_dpi_from_bytes(uint8_t mode_id) {
-    if (mode_id > MODE_LAST) return 0;
-
-    return g_bkpd_config.modes_config[mode_id].current_dpi_step * g_bkpd_config.modes_config[mode_id].dpi_per_step + g_bkpd_config.modes_config[mode_id].minimum_dpi;
+uint16_t bkpd_mode_get_dpi(uint8_t mode_id) {
+    if(!bkpd_mode_is_valid(mode_id)) return 0;
+    return g_bkpd_config.modes_config[mode_id].current_dpi_step * bkpd_mode_get_dpi_per_step(mode_id) + bkpd_mode_get_minimum_dpi(mode_id);
 }
 
-void bkpd_mode_affect_dpi(uint8_t mode_id) {
-    if (mode_id > MODE_LAST) return;
+void bkpd_mode_apply_dpi(uint8_t mode_id) {
+    if(!bkpd_mode_is_valid(mode_id)) return;
 
-    uint16_t new_dpi = bkpd_mode_calculate_dpi_from_bytes(mode_id);
-    if (new_dpi != pointing_device_get_cpi()) {
-        pointing_device_set_cpi(new_dpi);
-    }
-}
-
-void bkpd_mode_affect_dpi_from_bytes(uint8_t mode_id, uint16_t new_dpi) {
-    if (mode_id > MODE_LAST) return;
-
+    uint16_t new_dpi = bkpd_mode_get_dpi(mode_id);
+    printf("new_dpi from mode_id: %d is %d\n", mode_id, new_dpi);
+    
     // clamp
     if (new_dpi > bkpd_mode_get_max_dpi(mode_id)) new_dpi = bkpd_mode_get_max_dpi(mode_id);
-
     if (new_dpi < bkpd_mode_get_minimum_dpi(mode_id)) new_dpi = bkpd_mode_get_minimum_dpi(mode_id);
 
-    g_bkpd_config.modes_config[mode_id].current_dpi_step = new_dpi / g_bkpd_config.modes_config[mode_id].dpi_per_step;
-write_bkpd_config_to_eeprom();
+    if (new_dpi == pointing_device_get_cpi()) return;
+
+    printf("new_dpi after clamp: %d\n", new_dpi);
+
+    pointing_device_set_cpi(new_dpi);
 }
 
-void bkpd_mode_current_affect_dpi(void) {
-    bkpd_mode_affect_dpi(active_mode->id);
+void bkpd_mode_change_dpi(uint8_t mode_id, uint16_t new_dpi) {
+    if(!bkpd_mode_is_valid(mode_id)) return;
+    // calculate step from new DPI
+    // essentially the inverse of the formula in bkpd_mode_get_dpi()
+    uint8_t new_dpi_step = (new_dpi - bkpd_mode_get_minimum_dpi(mode_id)) / bkpd_mode_get_dpi_per_step(mode_id);
+
+    g_bkpd_config.modes_config[mode_id].current_dpi_step = new_dpi_step;
+    printf("applied dpi from bytes: mode_id: %d, new_dpi_step: %d\n", mode_id, new_dpi_step);
+    write_bkpd_config_to_eeprom();
+
+    // if active mode (eg. Normal), then apply immediately
+    if (active_mode->id == mode_id) {
+        bkpd_mode_apply_dpi(mode_id);
+    }
 }
 
 static void accumulate_buffer(int16_t *buffer_x, int16_t *buffer_y, int8_t dx, int8_t dy) {

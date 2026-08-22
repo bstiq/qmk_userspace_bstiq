@@ -106,7 +106,7 @@ bool bkpd_dispatch_command(uint8_t *command_id, uint8_t *command_data) {
             case argos_id_pointer_command_id_set_dpi: {
                 uint8_t mode_id = command_data[0];
                 uint16_t new_dpi = command_data[1] | (command_data[2] << 8);
-                bkpd_mode_affect_dpi_from_bytes(mode_id, new_dpi);
+                bkpd_mode_change_dpi(mode_id, new_dpi);
                 break;
             }
             case argos_id_pointer_command_id_set_invert: {
@@ -160,7 +160,7 @@ void bkpd_build_pointing_device_info_command_data(uint8_t *command_data) {
 void bkpd_build_mode_config_command_data(uint8_t mode_id, uint8_t *command_data) {
 #ifdef BK_HAS_POINTING_DEVICE
     // DPI
-    uint16_t dpi       = bkpd_mode_calculate_dpi_from_bytes(mode_id);
+    uint16_t dpi       = bkpd_mode_get_dpi(mode_id);
     command_data[0] = dpi & 0xFF;
     command_data[1] = (dpi >> 8) & 0xFF;
     // Minimum DPI
@@ -232,7 +232,7 @@ bool process_record_bk_pointing_device(uint16_t keycode, keyrecord_t *record) {
 
     // try to process trigger/toggle mode keycodes first
     uint8_t mode = bkpd_mode_from_keycode(keycode);
-    if(mode >= 0) {
+    if(mode != 255) {
         // figure out if we have a press or a toggle
         uint8_t min_keycode = bkpd_get_lowest_mode_keycode();
         // pressed keycode
