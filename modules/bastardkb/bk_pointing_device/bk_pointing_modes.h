@@ -61,3 +61,4 @@ uint16_t bkpd_get_lowest_mode_keycode(void);
 uint8_t bkpd_mode_from_keycode(uint16_t keycode);
 void bkpd_mode_toggle_active(uint8_t mode_id);
 bool bkpd_mode_is_valid(uint8_t mode_id);
+report_mouse_t bkpd_mode_volume_process(report_mouse_t mouse_report);
