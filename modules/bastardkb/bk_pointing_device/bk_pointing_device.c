@@ -28,6 +28,7 @@
 #include <string.h>
 #include "math.h"
 #include "introspection.h"
+#include "bk_pointing_rgb.h"
 
 #ifdef CONSOLE_ENABLE
 #    include "print.h"
@@ -45,7 +46,7 @@
 ASSERT_COMMUNITY_MODULES_MIN_API_VERSION(1, 0, 0);
 
 bkpd_config_t g_bkpd_config                  = {0};
-static int8_t changing_dpi_settings_for_mode = -1;
+int8_t changing_dpi_settings_for_mode = -1;
 
 /**
  * \brief Set the value of `config` from EEPROM.
@@ -199,7 +200,7 @@ bool bkpd_get_auto_precision_on_mouse_layer_enabled(void) {
 }
 
 /**
- * \brief Implement drag-scroll.
+ * \brief Implement pointing modes
  */
 report_mouse_t pointing_device_task_bk_pointing_device(report_mouse_t mouse_report) {
     if (is_keyboard_master()) {
@@ -220,14 +221,6 @@ static bool has_shift_mod(void) {
 #endif // NO_ACTION_ONESHOT
 }
 //  #    endif // BK_POINTING_DEVICE_ENABLE && !NO_BK_POINTING_DEVICE_KEYCODES
-
-void bkpd_activate_mode_if_pressed_normal_otherwise(keyrecord_t *record, uint8_t mode) {
-    if (record->event.pressed) {
-        bkpd_mode_set_active(mode);
-    } else {
-        bkpd_mode_set_active(MODE_NORMAL);
-    }
-}
 
 /**
  * \brief Process keycodes related to the pointing device.
@@ -339,95 +332,6 @@ bool is_mouse_record_kb(uint16_t keycode, keyrecord_t *record) {
 }
 #endif // POINTING_DEVICE_AUTO_MOUSE_ENABLE
 
-/*
- *   \brief Manage a visual indicator of the DPI/Sniping DPI that's being changed.
- */
-// TODO
-#if defined(RGBLIGHT_ENABLE) || defined(RGB_MATRIX_ENABLE)
-
-bool bkpd_is_changing_dpi_settings(void) {
-    return (changing_dpi_settings_for_mode >= 0);
-}
-
-bool rgb_matrix_indicators_advanced_bk_pointing_device(uint8_t led_min, uint8_t led_max) {
-    const uint8_t layer = get_highest_layer(layer_state);
-
-    if (layer != AUTO_MOUSE_DEFAULT_LAYER) {
-        return true; // process further in parent function
-    }
-
-    if (changing_dpi_settings_for_mode >= 0) {
-        // TODO move calculations here directly
-        uint8_t  steps_per_led = 1;
-        uint8_t  max_steps     = 0;
-        uint8_t  current_step  = 0;
-        uint16_t min_index     = LED_DPI_INDICATOR_INDEX;
-        RGB      color         = {0, 255, 0};
-
-        // handle brightness
-        color.r = (color.r * rgb_matrix_get_val()) / RGB_MATRIX_MAXIMUM_BRIGHTNESS;
-        color.g = (color.g * rgb_matrix_get_val()) / RGB_MATRIX_MAXIMUM_BRIGHTNESS;
-        color.b = (color.b * rgb_matrix_get_val()) / RGB_MATRIX_MAXIMUM_BRIGHTNESS;
-
-        max_steps    = g_bkpd_config.modes_config[changing_dpi_settings_for_mode].max_dpi_steps;
-        current_step = g_bkpd_config.modes_config[changing_dpi_settings_for_mode].current_dpi_step;
-
-        // up to 15 LEDs MAX, otherwise we divide by 15
-        if (max_steps > 15) {
-            uint8_t modulo = max_steps / 15 + 1; // round up
-            steps_per_led  = modulo;
-            max_steps      = max_steps / modulo + max_steps % 15;
-        } else {
-            steps_per_led = 1;
-        }
-
-        // max leds we will light, we divide by 2 otherwise it's a lot of LEDs
-        for (int i = led_min; i < led_max; i++) {
-            // TODO handle non-argos? (not really possible right now)
-            // light up only the primary side.
-            uint8_t index_symmetric = i % (RGBLIGHT_LED_COUNT / 2);
-
-            // handle LEDs if we are in range of the display bar
-            if (index_symmetric >= min_index && index_symmetric < min_index + max_steps) {
-                // handle last step (could be full or half brightness)
-                uint8_t last_step = min_index + current_step / steps_per_led;
-                if (index_symmetric == last_step) {
-                    // half brightness for odd DPI steps (2 steps/LED)
-                    if (steps_per_led == 2 && current_step % steps_per_led == 0) {
-                        rgb_matrix_set_color(i, (color.r + 255) / 2, color.g / 2, color.b / 2);
-                    }
-                    // full brightness for sniping DPI and even DPI steps
-                    else {
-                        rgb_matrix_set_color(i, color.r, color.g, color.b);
-                    }
-                }
-                // handle LEDs before the current step that are still active
-                else if (index_symmetric < last_step) {
-                    rgb_matrix_set_color(i, color.r, color.g, color.b);
-                }
-                // handle other LEDs (not active but in display bar)
-                else {
-                    // default red
-                    RGB red = {255, 0, 0};
-                    // handle brightness
-                    red.r = (red.r * rgb_matrix_get_val()) / RGB_MATRIX_MAXIMUM_BRIGHTNESS;
-                    red.g = (red.g * rgb_matrix_get_val()) / RGB_MATRIX_MAXIMUM_BRIGHTNESS;
-                    red.b = (red.b * rgb_matrix_get_val()) / RGB_MATRIX_MAXIMUM_BRIGHTNESS;
-                    rgb_matrix_set_color(i, red.r, red.g, red.b);
-                }
-            }
-            // turn off all other leds
-            else {
-                rgb_matrix_set_color(i, 0, 0, 0);
-            }
-        }
-        return false;
-    }
-    return true; // process further in parent function
-}
-
-#endif
-
 /**
  * \brief Initialize the pointing device.
  * Manages memory space for Argos an non-Argos configuration.
@@ -451,59 +355,24 @@ void keyboard_post_init_bk_pointing_device(void) {
 
     if (!g_bkpd_config.has_copied_qmk_config) {
         g_bkpd_config.has_copied_qmk_config = true;
-        // TODO
-        // #ifdef BK_POINTING_DEVICE_DRAGSCROLL_REVERSE_X
-        //         g_bkpd_config.dragscroll_axis_invert_x = true;
-        // #endif
-        // #ifdef BK_POINTING_DEVICE_DRAGSCROLL_REVERSE_Y
-        //         g_bkpd_config.dragscroll_axis_invert_y = true;
-        // #endif
         write_bkpd_config_to_eeprom();
     }
+
+    bkpd_mode_set_active(MODE_NORMAL);
 }
 
 /**
  * \brief Switch to precision mode on mouse layer if that option is enabled.
  */
 layer_state_t layer_state_set_bk_pointing_device(layer_state_t state) {
-    // this will automatically affect the DPI of the active mode if auto mouse layer is enabled
-    bkpd_mode_current_affect_dpi();
+    printf("layer_state_set_bk_pointing_device: state: %d, auto_precision_on_mouse_layer_enabled: %d\n", state, g_bkpd_config.auto_precision_on_mouse_layer_enabled);
+    if (layer_state_cmp(state, AUTO_MOUSE_DEFAULT_LAYER) && \
+            g_bkpd_config.auto_precision_on_mouse_layer_enabled) {
+        bkpd_mode_set_active(MODE_SNIPING);
+    } else { // in all other layers / mouse with no auto precision: normal DPI
+        bkpd_mode_set_active(MODE_NORMAL);
+    }
     return state;
-}
-
-void bkpd_set_dragscroll_axis_invert_x(bool invert) {
-    // g_bkpd_config.dragscroll_axis_invert_x = invert;
-    // write_bkpd_config_to_eeprom();
-    // TODO
-}
-
-void bkpd_set_dragscroll_axis_invert_y(bool invert) {
-    // g_bkpd_config.dragscroll_axis_invert_y = invert;
-    // write_bkpd_config_to_eeprom();
-    // TODO
-}
-
-void bkpd_set_dragscroll_dpi(uint16_t dpi) {
-    // TODO
-    // g_bkpd_config.dragscroll_dpi = dpi;
-    // write_bkpd_config_to_eeprom(&g_bkpd_config);
-}
-
-bool bkpd_get_dragscroll_axis_invert_x(void) {
-    // return g_bkpd_config.dragscroll_axis_invert_x;
-    // TODO
-    return 0;
-}
-
-bool bkpd_get_dragscroll_axis_invert_y(void) {
-    // return g_bkpd_config.dragscroll_axis_invert_y;
-    // TODO
-    return 0;
-}
-
-uint16_t bkpd_get_dragscroll_dpi(void) {
-    // TODO
-    return 0;
 }
 
 /**

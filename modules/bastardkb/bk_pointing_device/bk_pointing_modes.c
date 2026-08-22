@@ -48,8 +48,8 @@ typedef struct {
 } pointing_mode_t;
 
 static pointing_mode_t modes[] = {
-    {.id = MODE_NORMAL, .process = NULL, .set_active = bkpd_mode_normal_set_active, .invert_axis = NULL},
-    {.id = MODE_SNIPING, .process = NULL, .set_active = bkpd_mode_sniping_set_active, .invert_axis = NULL},
+    {.id = MODE_NORMAL, .process = NULL, .set_active = NULL, .invert_axis = NULL},
+    {.id = MODE_SNIPING, .process = NULL, .set_active = NULL, .invert_axis = NULL},
     {.id = MODE_DRAGSCROLL, .process = bkpd_mode_dragscroll_process, .set_active = NULL, .invert_axis = NULL},
     {.id = MODE_CURSOR, .process = bkpd_mode_cursor_process, .set_active = NULL, .invert_axis = NULL}
 };
@@ -77,6 +77,14 @@ void bkpd_modes_init(void) {
 
 }
 
+void bkpd_activate_mode_if_pressed_normal_otherwise(keyrecord_t *record, uint8_t mode) {
+    if (record->event.pressed) {
+        bkpd_mode_set_active(mode);
+    } else {
+        bkpd_mode_set_active(MODE_NORMAL);
+    }
+}
+
 uint8_t bkpd_mode_get_active_id(void) {
     return active_mode->id;
 }
@@ -93,26 +101,24 @@ void bkpd_mode_set_active(uint8_t id) {
                 active_mode->set_active(true);
             }
         }
+        // affect DPI
+        bkpd_mode_current_affect_dpi();
     }
 }
 
 // activate the mode, or go back to normal mode.
-void bkpd_mode_toggle_active(uint8_t id) {
+void bkpd_mode_toggle_active(uint8_t mode_id) {
     uint8_t num_modes = sizeof(modes) / sizeof(pointing_mode_t);
-    if (id < num_modes) {
+    if (mode_id < num_modes) {
         // are we already in this mode?
-        if (active_mode == &modes[id]) {
+        if (active_mode == &modes[mode_id]) {
             // go back to normal mode
             bkpd_mode_set_active(MODE_NORMAL);
             return;
         }
         // else, we were in another mode
         else {
-            // deactivate current mode
-            active_mode->set_active(false);
-            // activate new mode
-            active_mode = &modes[id];
-            active_mode->set_active(true);
+            bkpd_mode_set_active(mode_id);
         }
     }
 }
@@ -266,25 +272,8 @@ void bkpd_mode_legacy_sniping_cycle_dpi(bool forward) {
 /* -----------------------------------------------------------------------------
             Normal mode */
 
-void bkpd_mode_normal_set_active(bool active) {
-    if (active) {
-        if(g_bkpd_config.auto_precision_on_mouse_layer_enabled) {
-            bkpd_mode_affect_dpi(MODE_SNIPING);
-        }
-        else{
-            bkpd_mode_current_affect_dpi();
-        }
-    }
-}
-
 /* -----------------------------------------------------------------------------
             Sniping mode */
-
-void bkpd_mode_sniping_set_active(bool active) {
-    if (active) {
-        bkpd_mode_current_affect_dpi();
-    }
-}
 
 /* -----------------------------------------------------------------------------
             Dragscroll mode */

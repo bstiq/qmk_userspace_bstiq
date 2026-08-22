@@ -65,12 +65,6 @@ void bkpd_set_auto_mouse_layer_enabled(bool enabled);
 void bkpd_set_auto_precision_on_mouse_layer_enabled(bool enabled);
 bool bkpd_get_auto_mouse_layer_enabled(void);
 bool bkpd_get_auto_precision_on_mouse_layer_enabled(void);
-void bkpd_set_dragscroll_axis_invert_x(bool invert);
-void bkpd_set_dragscroll_axis_invert_y(bool invert);
-void bkpd_set_dragscroll_dpi(uint16_t dpi);
-bool bkpd_get_dragscroll_axis_invert_x(void);
-bool bkpd_get_dragscroll_axis_invert_y(void);
-uint16_t bkpd_get_dragscroll_dpi(void);
 void write_bkpd_config_to_eeprom(void);
 bool bkpd_is_changing_dpi_settings(void);
 
