@@ -131,6 +131,13 @@ bool bkpd_dispatch_command(uint8_t *command_id, uint8_t *command_data) {
                 bkpd_set_auto_precision_on_mouse_layer_enabled(auto_precision_on_mouse_layer_enabled);
                 break;
             }
+            case argos_id_pointer_command_id_set_custom_mode: {
+                printf("set custom mode, id=%d\n", command_data[0]);
+                uint8_t mode_id = command_data[0];
+                uint8_t *mode_config = &(command_data[1]);
+                bkpd_custom_mode_set_keys(mode_id, mode_config);
+                break;
+            }
             default:
                 break;
         }
@@ -161,6 +168,7 @@ void bkpd_build_pointing_device_info_command_data(uint8_t *command_data) {
 #endif
 }
 
+
 void bkpd_build_mode_config_command_data(uint8_t mode_id, uint8_t *command_data) {
 #ifdef BK_HAS_POINTING_DEVICE
     // DPI
@@ -182,6 +190,18 @@ void bkpd_build_mode_config_command_data(uint8_t mode_id, uint8_t *command_data)
     command_data[7] = bkpd_mode_get_invert(mode_id, 0);
     // Invert Y axis
     command_data[8] = bkpd_mode_get_invert(mode_id, 1);
+    // custom modes (optional)
+    if(mode_id >= MODE_CUSTOM1 && mode_id <= MODE_CUSTOM5) {
+        uint8_t custom_mode_index = mode_id - MODE_CUSTOM1;
+        command_data[9] = g_bkpd_config.custom_modes_config[custom_mode_index].keycode_left & 0xFF;
+        command_data[10] = (g_bkpd_config.custom_modes_config[custom_mode_index].keycode_left >> 8) & 0xFF;
+        command_data[11] = g_bkpd_config.custom_modes_config[custom_mode_index].keycode_right & 0xFF;
+        command_data[12] = (g_bkpd_config.custom_modes_config[custom_mode_index].keycode_right >> 8) & 0xFF;
+        command_data[13] = g_bkpd_config.custom_modes_config[custom_mode_index].keycode_up & 0xFF;
+        command_data[14] = (g_bkpd_config.custom_modes_config[custom_mode_index].keycode_up >> 8) & 0xFF;
+        command_data[15] = g_bkpd_config.custom_modes_config[custom_mode_index].keycode_down & 0xFF;
+        command_data[16] = (g_bkpd_config.custom_modes_config[custom_mode_index].keycode_down >> 8) & 0xFF;
+    }
 #endif
 }
 

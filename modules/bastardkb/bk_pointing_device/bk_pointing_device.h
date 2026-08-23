@@ -31,6 +31,7 @@ enum argos_pointer_command_id {
     argos_id_pointer_command_id_get_device_info = 0x04,
     argos_id_pointer_command_id_set_auto_mouse_layer_enabled = 0x05,
     argos_id_pointer_command_id_set_auto_precision_on_mouse_layer_enabled = 0x06,
+    argos_id_pointer_command_id_set_custom_mode = 0x07,
 };
 #endif
 
@@ -46,6 +47,13 @@ typedef union {
     } __attribute__((packed));
 } bkpd_mode_t;
 
+typedef struct {
+    uint16_t keycode_up;
+    uint16_t keycode_down;
+    uint16_t keycode_left;
+    uint16_t keycode_right;
+} bkpd_pointing_mode_custom_t;
+
 typedef union {
     uint8_t raw;
     struct {
@@ -53,6 +61,7 @@ typedef union {
         bool    auto_precision_on_mouse_layer_enabled : 1;
         bool    has_copied_qmk_config : 1;
         bkpd_mode_t modes_config[MODE_LAST];
+        bkpd_pointing_mode_custom_t custom_modes_config[BKPD_AMOUNT_CUSTOM_MODES];
         uint8_t active_mode;
     } __attribute__((packed));
 } bkpd_config_t;

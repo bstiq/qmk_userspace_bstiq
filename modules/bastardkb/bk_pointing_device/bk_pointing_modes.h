@@ -24,6 +24,8 @@ typedef struct {
     uint8_t mode;
 } mode_map_t;
 
+#define BKPD_AMOUNT_CUSTOM_MODES 4
+
  enum {
     MODE_NORMAL = 0,
     MODE_SNIPING = 1,
@@ -34,7 +36,12 @@ typedef struct {
     MODE_VOLUME = 6,
     MODE_TAB_SWITCH = 7,
     MODE_HISTORY = 8,
-    MODE_LAST = 9
+    MODE_CUSTOM1 = 9,
+    MODE_CUSTOM2 = 10,
+    MODE_CUSTOM3 = 11,
+    MODE_CUSTOM4 = 12,
+    MODE_CUSTOM5 = 13,
+    MODE_LAST = 14
 };
 
 void bkpd_mode_set_active(uint8_t id);
@@ -68,3 +75,5 @@ report_mouse_t bkpd_mode_history_process(report_mouse_t mouse_report);
 void bkpd_modes_init_default_config(void);
 bool bkpd_mode_is_sniping(void);
 bool bkpd_mode_should_handle_rgb(void);
+report_mouse_t bkpd_mode_custom_process(report_mouse_t mouse_report);
+void bkpd_custom_mode_set_keys(uint8_t mode_id, uint8_t *mode_config);

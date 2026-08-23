@@ -66,7 +66,12 @@ static pointing_mode_t modes[] = {
      {.id = MODE_VOLUME, .keycode = 0x7E0E, .process = bkpd_mode_volume_process, .set_active = NULL, .invert_axis = NULL},
      {.id = MODE_TAB_SWITCH, .keycode = 0x7E10, .process = bkpd_mode_tab_switch_process, .set_active = NULL, .invert_axis = NULL},
      {.id = MODE_HISTORY, .keycode = 0x7E12, .process = bkpd_mode_history_process, .set_active = NULL, .invert_axis = NULL},
-    };
+    {.id = MODE_CUSTOM1, .keycode = 0x7E14, .process = bkpd_mode_custom_process, .set_active = NULL, .invert_axis = NULL},
+    {.id = MODE_CUSTOM2, .keycode = 0x7E16, .process = bkpd_mode_custom_process, .set_active = NULL, .invert_axis = NULL},
+    {.id = MODE_CUSTOM3, .keycode = 0x7E18, .process = bkpd_mode_custom_process, .set_active = NULL, .invert_axis = NULL},
+    {.id = MODE_CUSTOM4, .keycode = 0x7E1A, .process = bkpd_mode_custom_process, .set_active = NULL, .invert_axis = NULL},
+    {.id = MODE_CUSTOM5, .keycode = 0x7E1C, .process = bkpd_mode_custom_process, .set_active = NULL, .invert_axis = NULL},
+};
 
 static pointing_mode_t *active_mode = &modes[0]; // reset on keyboard connection
 bool sniping_modifier_active = false;
@@ -398,6 +403,73 @@ void bkpd_mode_legacy_sniping_cycle_dpi(bool forward) {
 
 /* -----------------------------------------------------------------------------
             Normal mode */
+
+/* -----------------------------------------------------------------------------
+            Custom mode stuff */
+
+void bkpd_custom_mode_set_keys(uint8_t mode_id, uint8_t *mode_config) {
+        // only allow setting custom mode if we are in custom mode
+        // in one of the 5
+        if(mode_id < MODE_CUSTOM1 || mode_id > MODE_CUSTOM5) {
+            return;
+        }
+        uint8_t custom_mode_index = mode_id - MODE_CUSTOM1;
+        
+        // extract the data
+        uint16_t keycode_left = mode_config[0] | mode_config[1] << 8;
+        uint16_t keycode_right = mode_config[2] | mode_config[3] << 8;
+        uint16_t keycode_up = mode_config[4] | mode_config[5] << 8;
+        uint16_t keycode_down = mode_config[6] | mode_config[7] << 8;
+        printf("set custom mode, id=%d, keycode_left=%d, keycode_right=%d, keycode_up=%d, keycode_down=%d\n", mode_id, keycode_left, keycode_right, keycode_up, keycode_down);
+    
+        g_bkpd_config.custom_modes_config[custom_mode_index].keycode_left = keycode_left;
+        g_bkpd_config.custom_modes_config[custom_mode_index].keycode_right = keycode_right;
+        g_bkpd_config.custom_modes_config[custom_mode_index].keycode_up = keycode_up;
+        g_bkpd_config.custom_modes_config[custom_mode_index].keycode_down = keycode_down;
+        write_bkpd_config_to_eeprom();
+}
+
+// essentially same as cursor mode but with custom keys
+// TODO extract duplicate code in function
+report_mouse_t bkpd_mode_custom_process(report_mouse_t mouse_report) {
+    printf("custom mode process, id=%d\n", active_mode->id);
+    static int16_t buffer_x = 0;
+    static int16_t buffer_y = 0;
+    accumulate_buffer(&buffer_x, &buffer_y, mouse_report.x, mouse_report.y);
+    mouse_report.x = 0;
+    mouse_report.y = 0;
+
+    uint8_t custom_mode_index = active_mode->id - MODE_CUSTOM1;
+
+    uint16_t keycode_left = g_bkpd_config.custom_modes_config[custom_mode_index].keycode_left;
+    uint16_t keycode_right = g_bkpd_config.custom_modes_config[custom_mode_index].keycode_right;
+    uint16_t keycode_up = g_bkpd_config.custom_modes_config[custom_mode_index].keycode_up;
+    uint16_t keycode_down = g_bkpd_config.custom_modes_config[custom_mode_index].keycode_down;
+
+    if (abs(buffer_x) > BK_POINTING_DEVICE_CURSOR_BUFFER_SIZE_X) {
+        printf("tap keycode_right: %d, keycode_left: %d\n", keycode_right, keycode_left);
+#ifdef COMMUNITY_MODULE_ARGOS_ENABLE
+        argos_keycode_tap(buffer_x > 0 ? keycode_right : keycode_left);
+#else
+        tap_code(buffer_x > 0 ? keycode_right : keycode_left);
+#endif
+        buffer_x = 0;
+        // only allow to go horizontal or vertical at a time
+        buffer_y = 0;
+    }
+    if (abs(buffer_y) > BK_POINTING_DEVICE_CURSOR_BUFFER_SIZE_Y) {
+        printf("tap keycode_down: %d, keycode_up: %d\n", keycode_down, keycode_up);
+#ifdef COMMUNITY_MODULE_ARGOS_ENABLE
+        argos_keycode_tap(buffer_y > 0 ? keycode_down : keycode_up);
+#else
+        tap_code(buffer_y > 0 ? keycode_down : keycode_up);
+#endif
+        buffer_y = 0;
+        // only allow to go horizontal or vertical at a time
+        buffer_x = 0;
+    }
+    return mouse_report;
+}
 
 /* -----------------------------------------------------------------------------
             Sniping mode */
