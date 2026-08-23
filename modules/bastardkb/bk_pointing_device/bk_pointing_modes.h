@@ -33,7 +33,8 @@ typedef struct {
     MODE_ZOOM = 5,
     MODE_VOLUME = 6,
     MODE_TAB_SWITCH = 7,
-    MODE_LAST = 8
+    MODE_HISTORY = 8,
+    MODE_LAST = 9
 };
 
 void bkpd_mode_set_active(uint8_t id);
@@ -63,3 +64,5 @@ void bkpd_mode_toggle_active(uint8_t mode_id);
 bool bkpd_mode_is_valid(uint8_t mode_id);
 report_mouse_t bkpd_mode_volume_process(report_mouse_t mouse_report);  
 report_mouse_t bkpd_mode_tab_switch_process(report_mouse_t mouse_report);
+report_mouse_t bkpd_mode_history_process(report_mouse_t mouse_report);
+void bkpd_modes_init_default_config(void);

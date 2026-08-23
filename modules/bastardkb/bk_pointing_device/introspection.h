@@ -28,5 +28,7 @@
 #define PVOLUME_TOG 0x7E0F
 #define PTABS 0x7E10
 #define PTABS_TOG 0x7E11
-#define INVX 0x7E12
-#define INVY 0x7E13
+#define PHIST 0x7E12
+#define PHIST_TOG 0x7E13
+#define INVX 0x7E14
+#define INVY 0x7E15

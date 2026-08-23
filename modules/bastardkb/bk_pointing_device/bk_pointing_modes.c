@@ -27,19 +27,23 @@
 #define BK_POINTING_DEVICE_ZOOM_BUFFER_SIZE 20
 #define BK_POINTING_DEVICE_VOLUME_BUFFER_SIZE 20
 #define BK_POINTING_DEVICE_TAB_SWITCH_BUFFER_SIZE 30
+#define BK_POINTING_DEVICE_HISTORY_BUFFER_SIZE 50
 
 #ifdef COMMUNITY_MODULE_ARGOS_ENABLE
 #    include "argos.h"
 #endif
 
 #define BK_POINTING_DEVICE_MINIMUM_DEFAULT_DPI 400
-#define BK_POINTING_DEVICE_DEFAULT_DPI_CONFIG_STEP 200
-#define BK_POINTING_DEVICE_MINIMUM_SNIPING_DPI 100
-#define BK_POINTING_DEVICE_SNIPING_DPI_CONFIG_STEP 100
-#define BK_POINTING_DEVICE_DRAGSCROLL_DPI 100
+#define BK_POINTING_DEVICE_DEFAULT_DPI_CONFIG_STEP 150
+#define BK_POINTING_DEVICE_MINIMUM_SNIPING_DPI 50
+#define BK_POINTING_DEVICE_SNIPING_DPI_CONFIG_STEP 50
+// etc etc
 
-#define BK_POINTING_DEVICE_MAX_DPI_BYTES 4
-#define BK_POINTING_DEVICE_MAX_SNIPING_DPI_BYTES 4
+#define BK_POINTING_DEVICE_NORMAL_DEFAULT_STEP 3
+// etc etc
+
+#define BK_POINTING_DEVICE_DPI_STEPS 20
+#define BK_POINTING_DEVICE_SNIPING_DPI_STEPS 20
 
 extern bkpd_config_t g_bkpd_config;
 
@@ -61,6 +65,7 @@ static pointing_mode_t modes[] = {
      {.id = MODE_ZOOM, .keycode = 0x7E0C, .process = bkpd_mode_zoom_process, .set_active = NULL, .invert_axis = NULL},
      {.id = MODE_VOLUME, .keycode = 0x7E0E, .process = bkpd_mode_volume_process, .set_active = NULL, .invert_axis = NULL},
      {.id = MODE_TAB_SWITCH, .keycode = 0x7E10, .process = bkpd_mode_tab_switch_process, .set_active = NULL, .invert_axis = NULL},
+     {.id = MODE_HISTORY, .keycode = 0x7E12, .process = bkpd_mode_history_process, .set_active = NULL, .invert_axis = NULL},
     };
 
 static pointing_mode_t *active_mode = &modes[0]; // reset on keyboard connection
@@ -72,13 +77,13 @@ void bkpd_modes_init(void) {
 
     // Init to default values
     for(int i = 0; i < MODE_LAST; i++) {
-        g_bkpd_config.modes_config[i].max_dpi_steps     = pow(2, BK_POINTING_DEVICE_MAX_SNIPING_DPI_BYTES);
+        g_bkpd_config.modes_config[i].max_dpi_steps     = BK_POINTING_DEVICE_SNIPING_DPI_STEPS;
         g_bkpd_config.modes_config[i].dpi_per_step     = BK_POINTING_DEVICE_SNIPING_DPI_CONFIG_STEP;
         g_bkpd_config.modes_config[i].minimum_dpi     = BK_POINTING_DEVICE_MINIMUM_SNIPING_DPI;
     }
 
     // edit specific values
-    g_bkpd_config.modes_config[MODE_NORMAL].max_dpi_steps     = pow(2, BK_POINTING_DEVICE_MAX_DPI_BYTES);
+    g_bkpd_config.modes_config[MODE_NORMAL].max_dpi_steps     = BK_POINTING_DEVICE_DPI_STEPS;
     g_bkpd_config.modes_config[MODE_NORMAL].dpi_per_step     = BK_POINTING_DEVICE_DEFAULT_DPI_CONFIG_STEP;
     g_bkpd_config.modes_config[MODE_NORMAL].minimum_dpi     = BK_POINTING_DEVICE_MINIMUM_DEFAULT_DPI;
 }
@@ -242,6 +247,13 @@ bool bkpd_mode_get_invert(uint8_t mode_id, uint8_t axis_index) {
 uint16_t bkpd_mode_get_dpi_per_step(uint8_t mode_id) {
     if(!bkpd_mode_is_valid(mode_id)) return 0;
     return g_bkpd_config.modes_config[mode_id].dpi_per_step;
+}
+
+void bkpd_modes_init_default_config(void) {
+    // set default values for all modes
+    for(uint8_t i = 0; i < MODE_LAST; i++) {
+        g_bkpd_config.modes_config[i].current_dpi_step = BK_POINTING_DEVICE_NORMAL_DEFAULT_STEP;
+    }
 }
 
 /* -----------------------------------------------------------------------------
@@ -457,6 +469,43 @@ report_mouse_t bkpd_mode_tab_switch_process(report_mouse_t mouse_report) {
         }
         tap_code(KC_TAB);
         if (buffer_x < 0) {
+            unregister_code(KC_LSFT);
+        }
+        unregister_code(KC_LCTL);
+#endif
+        buffer_x = 0;
+    }
+    return mouse_report;
+}
+
+/* -----------------------------------------------------------------------------
+            History mode */
+
+report_mouse_t bkpd_mode_history_process(report_mouse_t mouse_report) {
+    static int16_t buffer_x = 0;
+    static int16_t buffer_y = 0;
+    accumulate_buffer(&buffer_x, &buffer_y, mouse_report.x, mouse_report.y);
+    mouse_report.x = 0;
+    mouse_report.y = 0;
+    // tap Control + plus or minus
+    if (abs(buffer_x) > BK_POINTING_DEVICE_TAB_SWITCH_BUFFER_SIZE) {
+#ifdef COMMUNITY_MODULE_ARGOS_ENABLE
+        argos_keycode_down(KC_LCTL);
+        if (buffer_x > 0) {
+            argos_keycode_down(KC_LSFT);
+        }
+        argos_keycode_tap(KC_Z);
+        if (buffer_x > 0) {
+            argos_keycode_up(KC_LSFT);
+        }
+        argos_keycode_up(KC_LCTL);
+#else
+        register_code(KC_LCTL);
+        if (buffer_x > 0) {
+            register_code(KC_LSFT);
+        }
+        tap_code(KC_Z);
+        if (buffer_x > 0) {
             unregister_code(KC_LSFT);
         }
         unregister_code(KC_LCTL);

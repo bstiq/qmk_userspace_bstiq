@@ -65,6 +65,10 @@ static void read_bkpd_config_from_eeprom(void) {
 #endif
 }
 
+void bkpd_init_default_config(void) {
+    bkpd_modes_init_default_config();
+}
+
 /**
  * \brief Save the value of `config` to eeprom.
  *
@@ -354,6 +358,7 @@ void keyboard_post_init_bk_pointing_device(void) {
 
     if (!g_bkpd_config.has_copied_qmk_config) {
         g_bkpd_config.has_copied_qmk_config = true;
+        bkpd_init_default_config();
         write_bkpd_config_to_eeprom();
     }
 
