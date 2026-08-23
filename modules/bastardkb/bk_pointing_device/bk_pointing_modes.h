@@ -66,3 +66,5 @@ report_mouse_t bkpd_mode_volume_process(report_mouse_t mouse_report);
 report_mouse_t bkpd_mode_tab_switch_process(report_mouse_t mouse_report);
 report_mouse_t bkpd_mode_history_process(report_mouse_t mouse_report);
 void bkpd_modes_init_default_config(void);
+bool bkpd_mode_is_sniping(void);
+bool bkpd_mode_should_handle_rgb(void);

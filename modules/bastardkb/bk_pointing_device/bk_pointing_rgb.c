@@ -19,6 +19,7 @@
 
  #include "bk_pointing_rgb.h"
  #include "bk_pointing_device.h"
+ #include "argos_rgb.h"
 
  extern int8_t changing_dpi_settings_for_mode;
  extern bkpd_config_t g_bkpd_config;
@@ -39,6 +40,44 @@ bool rgb_matrix_indicators_advanced_bk_pointing_device(uint8_t led_min, uint8_t 
         return true; // process further in parent function
     }
 
+    // Pointing modes -------------------------------------------------------
+    // TODO keep underglow on
+    // if we are in a specific pointer mode, light up specific LEDs 
+    // to indicate to the user what is happening
+    uint8_t mode_id = bkpd_mode_get_active_id();
+
+    if(mode_id > 0){
+        RGB      color         = {0, 255, 0}; // default green
+        // custom layer color if Argos is enabled
+#ifdef COMMUNITY_MODULE_ARGOS_ENABLE
+        argos_rgb_get_layer_color(AUTO_MOUSE_DEFAULT_LAYER, &color);
+#endif
+        // handle brightness
+        color.r = (color.r * rgb_matrix_get_val()) / RGB_MATRIX_MAXIMUM_BRIGHTNESS;
+        color.g = (color.g * rgb_matrix_get_val()) / RGB_MATRIX_MAXIMUM_BRIGHTNESS;
+        color.b = (color.b * rgb_matrix_get_val()) / RGB_MATRIX_MAXIMUM_BRIGHTNESS;
+
+        // calculate the index of the LEDs to light up, primary side only
+        const uint16_t index = (mode_id + LED_MODE_INDICATOR_INDEX - 1);
+        const uint16_t index_sniping_modifier = (LED_MODE_INDICATOR_INDEX + MODE_SNIPING - 1);
+        
+        for (int i = led_min; i < led_max; i++) {
+            // sniping is handled differently: it can be active either through 
+            // a mode, or through a modifier
+            uint8_t index_symmetric = i % (RGBLIGHT_LED_COUNT / 2);
+            if(index_symmetric == index || (index_symmetric == index_sniping_modifier && bkpd_mode_is_sniping())){
+                rgb_matrix_set_color(i, color.r, color.g, color.b);
+            }
+            // otherwise, turn in off
+            else {
+                rgb_matrix_set_color(i, 0, 0, 0);
+            }
+        }
+        return false;
+    }
+
+    // DPI change  -------------------------------------------------------
+
     if (changing_dpi_settings_for_mode >= 0) {
         // TODO move calculations here directly
         uint8_t  steps_per_led = 1;
@@ -56,8 +95,8 @@ bool rgb_matrix_indicators_advanced_bk_pointing_device(uint8_t led_min, uint8_t 
         current_step = g_bkpd_config.modes_config[changing_dpi_settings_for_mode].current_dpi_step;
 
         // up to 15 LEDs MAX, otherwise we divide by 15
-        if (max_steps > 15) {
-            uint8_t modulo = max_steps / 15 + 1; // round up
+        if (max_steps > 16) {
+            uint8_t modulo = max_steps / 16 + 1; // round up
             steps_per_led  = modulo;
             max_steps      = max_steps / modulo + max_steps % 15;
         } else {

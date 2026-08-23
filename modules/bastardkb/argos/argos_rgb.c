@@ -44,6 +44,10 @@ bool rgb_matrix_indicators_advanced_argos(uint8_t led_min, uint8_t led_max) {
     if (bkpd_is_changing_dpi_settings()) {
         return true;
     }
+    // if the pointing module is in a special mode, it will handle custom RGB indicators
+    if (bkpd_mode_should_handle_rgb()) {
+        return true;
+    }
 #    endif
     const uint8_t  layer     = get_highest_layer(layer_state);
     const uint16_t min_index = layer * RGBLIGHT_LED_COUNT;

@@ -250,6 +250,16 @@ report_mouse_t bkpd_process_active_mode(report_mouse_t mouse_report) {
     return mouse_report;
 }
 
+// used for RGB indicators
+bool bkpd_mode_is_sniping(void) {
+    return (active_mode->id == MODE_SNIPING) || sniping_modifier_active;
+}
+
+// used to override Argos color manager
+bool bkpd_mode_should_handle_rgb(void) {
+    return (active_mode->id > 0);
+}
+
 // used by argos
 void bkpd_mode_cycle_dpi(uint8_t mode_id, bool forward) {
     // compare bytes etc - TODO
