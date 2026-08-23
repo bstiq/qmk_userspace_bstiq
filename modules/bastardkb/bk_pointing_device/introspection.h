@@ -26,5 +26,7 @@
 #define PZOOM_TOG 0x7E0D
 #define PVOLUME 0x7E0E
 #define PVOLUME_TOG 0x7E0F
-#define INVX 0x7E10
-#define INVY 0x7E11
+#define PTABS 0x7E10
+#define PTABS_TOG 0x7E11
+#define INVX 0x7E12
+#define INVY 0x7E13

@@ -26,6 +26,7 @@
 #define BK_POINTING_DEVICE_BRIGHTNESS_BUFFER_SIZE 30
 #define BK_POINTING_DEVICE_ZOOM_BUFFER_SIZE 20
 #define BK_POINTING_DEVICE_VOLUME_BUFFER_SIZE 20
+#define BK_POINTING_DEVICE_TAB_SWITCH_BUFFER_SIZE 30
 
 #ifdef COMMUNITY_MODULE_ARGOS_ENABLE
 #    include "argos.h"
@@ -48,30 +49,21 @@ typedef struct {
     report_mouse_t (*process)(report_mouse_t mouse_report);
     void (*set_active)(bool);
     void (*invert_axis)(bool axis);
+    uint16_t keycode;
 } pointing_mode_t;
 
 static pointing_mode_t modes[] = {
-    {.id = MODE_NORMAL, .process = NULL, .set_active = NULL, .invert_axis = NULL}, 
-    {.id = MODE_SNIPING, .process = NULL, .set_active = NULL, .invert_axis = NULL}, 
-    {.id = MODE_DRAGSCROLL, .process = bkpd_mode_dragscroll_process, .set_active = NULL, .invert_axis = NULL},
-     {.id = MODE_CURSOR, .process = bkpd_mode_cursor_process, .set_active = NULL, .invert_axis = NULL},
-     {.id = MODE_BRIGHTNESS, .process = bkpd_mode_brightness_process, .set_active = NULL, .invert_axis = NULL},
-     {.id = MODE_ZOOM, .process = bkpd_mode_zoom_process, .set_active = NULL, .invert_axis = NULL},
-     {.id = MODE_VOLUME, .process = bkpd_mode_volume_process, .set_active = NULL, .invert_axis = NULL}
+    {.id = MODE_NORMAL, .keycode = 0x0000, .process = NULL, .set_active = NULL, .invert_axis = NULL}, 
+    {.id = MODE_SNIPING, .keycode = 0x7E04, .process = NULL, .set_active = NULL, .invert_axis = NULL}, 
+    {.id = MODE_DRAGSCROLL, .keycode = 0x7E06, .process = bkpd_mode_dragscroll_process, .set_active = NULL, .invert_axis = NULL},
+     {.id = MODE_CURSOR, .keycode = 0x7E08, .process = bkpd_mode_cursor_process, .set_active = NULL, .invert_axis = NULL},
+     {.id = MODE_BRIGHTNESS, .keycode = 0x7E0A, .process = bkpd_mode_brightness_process, .set_active = NULL, .invert_axis = NULL},
+     {.id = MODE_ZOOM, .keycode = 0x7E0C, .process = bkpd_mode_zoom_process, .set_active = NULL, .invert_axis = NULL},
+     {.id = MODE_VOLUME, .keycode = 0x7E0E, .process = bkpd_mode_volume_process, .set_active = NULL, .invert_axis = NULL},
+     {.id = MODE_TAB_SWITCH, .keycode = 0x7E10, .process = bkpd_mode_tab_switch_process, .set_active = NULL, .invert_axis = NULL},
     };
 
 static pointing_mode_t *active_mode = &modes[0]; // reset on keyboard connection
-
-// manually defined from introspection
-// TODO figure out a better way to do this
-mode_map_t g_mode_map[] = {
-    {.keycode = 0x7E04, .mode = MODE_SNIPING},
-    {.keycode = 0x7E06, .mode = MODE_DRAGSCROLL},
-    {.keycode = 0x7E08, .mode = MODE_CURSOR},
-    {.keycode = 0x7E0A, .mode = MODE_BRIGHTNESS},
-    {.keycode = 0x7E0C, .mode = MODE_ZOOM},
-    {.keycode = 0x7E0E, .mode = MODE_VOLUME},
-};
 
 /* -----------------------------------------------------------------------------
             Helper functions for mode management */
@@ -93,9 +85,9 @@ void bkpd_modes_init(void) {
 
 uint16_t bkpd_get_highest_mode_keycode(void) {
     uint16_t highest_keycode = 0;
-    for(int i = 0; i < sizeof(g_mode_map) / sizeof(mode_map_t); i++) {
-        if(g_mode_map[i].keycode > highest_keycode) {
-            highest_keycode = g_mode_map[i].keycode;
+    for(int i = 0; i < sizeof(modes) / sizeof(pointing_mode_t); i++) {
+        if(modes[i].keycode > highest_keycode) {
+            highest_keycode = modes[i].keycode;
         }
     }
     return highest_keycode;
@@ -103,19 +95,19 @@ uint16_t bkpd_get_highest_mode_keycode(void) {
 
 uint16_t bkpd_get_lowest_mode_keycode(void) {
     uint16_t lowest_keycode = bkpd_get_highest_mode_keycode();
-    for(int i = 0; i < sizeof(g_mode_map) / sizeof(mode_map_t); i++) {
-        if(g_mode_map[i].keycode < lowest_keycode) {
-            lowest_keycode = g_mode_map[i].keycode;
+    for(int i = 0; i < sizeof(modes) / sizeof(pointing_mode_t); i++) {
+        if(modes[i].keycode < lowest_keycode) {
+            lowest_keycode = modes[i].keycode;
         }
     }
     return lowest_keycode;
 }
 
 uint8_t bkpd_mode_from_keycode(uint16_t keycode) {
-    for(int i = 0; i < sizeof(g_mode_map) / sizeof(mode_map_t); i++) {
-        if(g_mode_map[i].keycode == keycode || // regular or toggle
-            g_mode_map[i].keycode + 1 == keycode) {
-            return g_mode_map[i].mode;
+    for(int i = 0; i < sizeof(modes) / sizeof(pointing_mode_t); i++) {
+        if(modes[i].keycode == keycode || // regular or toggle
+            modes[i].keycode + 1 == keycode) {
+            return modes[i].id;
         }
     }
     return -1;
@@ -131,8 +123,8 @@ bool bkpd_mode_is_valid(uint8_t mode_id) {
         return true;
     }
     // otherwise, test in map
-    for(int i = 0; i < sizeof(g_mode_map) / sizeof(mode_map_t); i++) {
-        if(g_mode_map[i].mode == mode_id) {
+    for(int i = 0; i < sizeof(modes) / sizeof(pointing_mode_t); i++) {
+        if(modes[i].id == mode_id) {
             return true;
         }
     }
@@ -433,6 +425,43 @@ report_mouse_t bkpd_mode_volume_process(report_mouse_t mouse_report) {
         tap_code(buffer_y < 0 ? KC_VOLU : KC_VOLD);
 #endif
         buffer_y = 0;
+    }
+    return mouse_report;
+}
+
+/* -----------------------------------------------------------------------------
+            Tab switch mode */
+
+report_mouse_t bkpd_mode_tab_switch_process(report_mouse_t mouse_report) {
+    static int16_t buffer_x = 0;
+    static int16_t buffer_y = 0;
+    accumulate_buffer(&buffer_x, &buffer_y, mouse_report.x, mouse_report.y);
+    mouse_report.x = 0;
+    mouse_report.y = 0;
+    // tap Control + plus or minus
+    if (abs(buffer_x) > BK_POINTING_DEVICE_TAB_SWITCH_BUFFER_SIZE) {
+#ifdef COMMUNITY_MODULE_ARGOS_ENABLE
+        argos_keycode_down(KC_LCTL);
+        if (buffer_x < 0) {
+            argos_keycode_down(KC_LSFT);
+        }
+        argos_keycode_tap(KC_TAB);
+        if (buffer_x < 0) {
+            argos_keycode_up(KC_LSFT);
+        }
+        argos_keycode_up(KC_LCTL);
+#else
+        register_code(KC_LCTL);
+        if (buffer_x < 0) {
+            register_code(KC_LSFT);
+        }
+        tap_code(KC_TAB);
+        if (buffer_x < 0) {
+            unregister_code(KC_LSFT);
+        }
+        unregister_code(KC_LCTL);
+#endif
+        buffer_x = 0;
     }
     return mouse_report;
 }
