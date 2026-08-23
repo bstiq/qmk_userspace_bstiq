@@ -69,6 +69,7 @@ static pointing_mode_t modes[] = {
     };
 
 static pointing_mode_t *active_mode = &modes[0]; // reset on keyboard connection
+bool sniping_modifier_active = false;
 
 /* -----------------------------------------------------------------------------
             Helper functions for mode management */
@@ -136,16 +137,82 @@ bool bkpd_mode_is_valid(uint8_t mode_id) {
     return false;
 }
 
+void bkpd_deactivate_old_mode_and_activate_new(uint8_t new_mode_id) {
+    if (active_mode->set_active != NULL) {
+        active_mode->set_active(false); // disable current mode nonetheless, only one mode active at a time
+    }
+    active_mode = &modes[new_mode_id];
+    if (active_mode->set_active != NULL) {
+        active_mode->set_active(true);
+    }
+}
+
+void bkpd_mode_release(uint8_t mode_id) {
+    // if we are releasing sniping, check if we are in a mode combo
+    // eg. pressing snipe+drag, release snipe -> keep drag
+    if(mode_id == MODE_SNIPING) {
+        if(sniping_modifier_active) {
+            // nothing to do with primary mode, we kept it active
+            // simply disable secondary sniping mode
+            sniping_modifier_active = false;
+            printf("1\n");
+        }
+        // no secondary active, just go back to normal mode
+        else{
+            bkpd_deactivate_old_mode_and_activate_new(MODE_NORMAL);
+            printf("2\n");
+        }
+    }
+    // if we are releasing another mode, we need to check if sniping was enabled.
+    // if so, we want to move sniping back into the active mode
+    else{
+        // are we in a mode combo?
+        if(sniping_modifier_active) {
+            printf("3\n");
+            // activate primary mode as sniping
+            bkpd_deactivate_old_mode_and_activate_new(MODE_SNIPING);
+            // deactivate secondary sniping mode
+            sniping_modifier_active = false;
+        }
+        // no mode combo - just go back to normal mode
+        else{
+            bkpd_deactivate_old_mode_and_activate_new(MODE_NORMAL);
+            printf("4\n");
+        }
+    }
+
+    // in all cases, affect DPI
+    bkpd_mode_apply_dpi(active_mode->id);
+}
+
 void bkpd_mode_set_active(uint8_t id) {
     // test if the mode is valid: search in map
     if (bkpd_mode_is_valid(id)) {
-        if (active_mode != &modes[id]) {
-            if (active_mode->set_active != NULL) {
-                active_mode->set_active(false); // disable current mode nonetheless, only one mode active at a time
+        if (active_mode->id != id) {
+            if(id!=MODE_SNIPING){
+                // if not currently sniping, replace mode
+                if(active_mode->id != MODE_SNIPING) {
+                    bkpd_deactivate_old_mode_and_activate_new(id);
+                    sniping_modifier_active = false;
+                }
+                // if currently sniping, activate mode and mark sniping as modifier
+                else if((active_mode->id == MODE_SNIPING || sniping_modifier_active)) {
+                    bkpd_deactivate_old_mode_and_activate_new(id);
+                    sniping_modifier_active = true;
+                }
             }
-            active_mode = &modes[id];
-            if (active_mode->set_active != NULL) {
-                active_mode->set_active(true);
+            // we want to switch to sniping mode
+            else{
+                // if previous mode was normal mode, just activate sniping as a mode, not as modifier
+                if(active_mode->id == MODE_NORMAL) {
+                    bkpd_deactivate_old_mode_and_activate_new(MODE_SNIPING);
+                    sniping_modifier_active = false;
+                }
+                // if previous mode was other than normal mode, activate mode and mark sniping as modifier
+                else {
+                    // stay in that mode, nothing to impact on active_mode
+                    sniping_modifier_active = true;
+                }
             }
         }
         // affect DPI
@@ -278,16 +345,16 @@ void bkpd_mode_apply_dpi(uint8_t mode_id) {
     if(!bkpd_mode_is_valid(mode_id)) return;
 
     uint16_t new_dpi = bkpd_mode_get_dpi(mode_id);
-    printf("new_dpi from mode_id: %d is %d\n", mode_id, new_dpi);
     
     // clamp
     if (new_dpi > bkpd_mode_get_max_dpi(mode_id)) new_dpi = bkpd_mode_get_max_dpi(mode_id);
     if (new_dpi < bkpd_mode_get_minimum_dpi(mode_id)) new_dpi = bkpd_mode_get_minimum_dpi(mode_id);
 
+    if(sniping_modifier_active) {
+        new_dpi = new_dpi/2;
+    }
+
     if (new_dpi == pointing_device_get_cpi()) return;
-
-    printf("new_dpi after clamp: %d\n", new_dpi);
-
     pointing_device_set_cpi(new_dpi);
 }
 

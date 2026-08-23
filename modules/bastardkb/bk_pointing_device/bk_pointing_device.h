@@ -71,6 +71,9 @@ bool bkpd_is_changing_dpi_settings(void);
 // TODO gate this behing community_module_argos_enabled
 void bkpd_build_mode_config_command_data(uint8_t mode_id, uint8_t *command_data);
 void bkpd_init_default_config(void);
+void bkpd_deactivate_old_mode_and_activate_new(uint8_t new_mode_id);
+void bkpd_deactivate_old_secondary_mode_and_activate_new(uint8_t new_mode_id);
+void bkpd_mode_release(uint8_t mode_id);
 
 #ifdef POINTING_DEVICE_DRIVER_digitizer
 bool digitizer_task_kb(digitizer_t *const digitizer_state);

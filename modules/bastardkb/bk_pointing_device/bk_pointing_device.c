@@ -247,7 +247,7 @@ bool process_record_bk_pointing_device(uint16_t keycode, keyrecord_t *record) {
             }
             else {
                 printf("bkpd_mode_set_active: MODE_NORMAL\n");
-                bkpd_mode_set_active(MODE_NORMAL);
+                bkpd_mode_release(mode);
             }
         } 
         // toggle keycode
