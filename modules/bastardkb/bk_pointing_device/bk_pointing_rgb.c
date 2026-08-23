@@ -41,7 +41,6 @@ bool rgb_matrix_indicators_advanced_bk_pointing_device(uint8_t led_min, uint8_t 
     }
 
     // Pointing modes -------------------------------------------------------
-    // TODO keep underglow on
     // if we are in a specific pointer mode, light up specific LEDs 
     // to indicate to the user what is happening
     uint8_t mode_id = bkpd_mode_get_active_id();
@@ -65,7 +64,8 @@ bool rgb_matrix_indicators_advanced_bk_pointing_device(uint8_t led_min, uint8_t 
             // sniping is handled differently: it can be active either through 
             // a mode, or through a modifier
             uint8_t index_symmetric = i % (RGBLIGHT_LED_COUNT / 2);
-            if(index_symmetric == index || (index_symmetric == index_sniping_modifier && bkpd_mode_is_sniping())){
+            if(index_symmetric == index || (index_symmetric == index_sniping_modifier && bkpd_mode_is_sniping())
+                || index_symmetric < LED_MODE_INDICATOR_INDEX){ // keep LEDs before it on (ie underglow)
                 rgb_matrix_set_color(i, color.r, color.g, color.b);
             }
             // otherwise, turn in off
