@@ -399,7 +399,7 @@ layer_state_t layer_state_set_bk_pointing_device(layer_state_t state) {
  */
 #ifdef POINTING_DEVICE_DRIVER_digitizer
 
-void accumulate_delta_x_y(digitizer_t *const digitizer_state, digitizer_t *const last_report, uint16_t *delta_x, uint16_t *delta_y) {
+void calculate_delta_x_y(digitizer_t *const digitizer_state, digitizer_t *const last_report, uint16_t *delta_x, uint16_t *delta_y) {
     for (int i = 0; i < DIGITIZER_CONTACT_COUNT; i++) {
 #    if DIGITIZER_FINGER_COUNT > 0
         if (i < DIGITIZER_FINGER_COUNT) {
@@ -412,17 +412,15 @@ void accumulate_delta_x_y(digitizer_t *const digitizer_state, digitizer_t *const
 bool digitizer_task_kb(digitizer_t *const digitizer_state) {
     report_mouse_t     report      = {0};
     static digitizer_t last_report = {0};
-    uint16_t           delta_x     = 0;
-    uint16_t           delta_y     = 0;
-
-    printf("1\n");
+    static uint16_t           delta_x     = 0;
+    static uint16_t           delta_y     = 0;
 
     // TODO. for some reason, having this here returns even if !false. weird.
     // if (!digitizer_task_user(digitizer_state)) {
     //     return false;
     // }
 
-    accumulate_delta_x_y(digitizer_state, &last_report, &delta_x, &delta_y);
+    calculate_delta_x_y(digitizer_state, &last_report, &delta_x, &delta_y);
 
     // "fake copy" it into the mouse report so that the auto mouse layer may trigger if needed
     report.x = delta_x;
@@ -462,6 +460,9 @@ bool digitizer_task_kb(digitizer_t *const digitizer_state) {
                 // printf("report.x: %d, report.y: %d\n", report.x, report.y);
 
                 report = bkpd_process_active_mode(report);
+                // reset local buffer if pointing mode triggered
+                delta_x = report.x;
+                delta_y = report.y;
                 // report = pointing_device_task_user(report);
                 // translate mouse report back into digitizer report if we are in normal or sniping mode
                 // TODO this is a hack, we should later figure out if there is a transformation or not.
