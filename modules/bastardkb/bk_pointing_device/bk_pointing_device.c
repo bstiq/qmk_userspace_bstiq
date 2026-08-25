@@ -140,6 +140,13 @@ bool bkpd_dispatch_command(uint8_t *command_id, uint8_t *command_data) {
                 bkpd_custom_mode_set_keys(mode_id, mode_config);
                 break;
             }
+            case argos_id_pointer_command_id_set_activate_on_layer: {
+                printf("set activate on layer, mode_id: %d, activate_on_layer: %d\n", command_data[0], command_data[1]);
+                uint8_t mode_id = command_data[0];
+                uint8_t activate_on_layer = command_data[1];
+                bkpd_mode_set_activate_on_layer(mode_id, activate_on_layer);
+                break;
+            }
             default:
                 break;
         }
@@ -204,6 +211,8 @@ void bkpd_build_mode_config_command_data(uint8_t mode_id, uint8_t *command_data)
         command_data[15] = g_bkpd_config.custom_modes_config[custom_mode_index].keycode_down & 0xFF;
         command_data[16] = (g_bkpd_config.custom_modes_config[custom_mode_index].keycode_down >> 8) & 0xFF;
     }
+    // activate on layer
+    command_data[17] = g_bkpd_config.modes_config[mode_id].activate_on_layer;
 #endif
 }
 
@@ -381,13 +390,24 @@ void keyboard_post_init_bk_pointing_device(void) {
 }
 
 /**
- * \brief Switch to precision mode on mouse layer if that option is enabled.
+ * \brief Switch to a specific mode on layer if that option is enabled.
  */
 layer_state_t layer_state_set_bk_pointing_device(layer_state_t state) {
+    printf("layer_state_set_bk_pointing_device: state: %d\n", state);
     if (layer_state_cmp(state, AUTO_MOUSE_DEFAULT_LAYER) && \
             g_bkpd_config.auto_precision_on_mouse_layer_enabled) {
         bkpd_mode_set_active(MODE_SNIPING);
-    } else { // in all other layers / mouse with no auto precision: normal DPI
+    } else { 
+        // test if any of the custom modes are activated on this layer
+        for(int i = 0; i < MODE_LAST; i++) {
+            printf("mode_id: %d, activate_on_layer: %d\n", i, g_bkpd_config.modes_config[i].activate_on_layer);
+            if(layer_state_cmp(state, g_bkpd_config.modes_config[i].activate_on_layer)) {
+                bkpd_mode_set_active(i);
+                printf("bkpd_mode_set_active: %d\n", i);
+                return state;
+            }
+        }
+        // default option
         bkpd_mode_set_active(MODE_NORMAL);
     }
     return state;

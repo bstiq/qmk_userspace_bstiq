@@ -83,6 +83,7 @@ void bkpd_modes_init(void) {
 
     // Init to default values
     for(int i = 0; i < MODE_LAST; i++) {
+        g_bkpd_config.modes_config[i].activate_on_layer = 0;
         g_bkpd_config.modes_config[i].max_dpi_steps     = BK_POINTING_DEVICE_SNIPING_DPI_STEPS;
         g_bkpd_config.modes_config[i].dpi_per_step     = BK_POINTING_DEVICE_SNIPING_DPI_CONFIG_STEP;
         g_bkpd_config.modes_config[i].minimum_dpi     = BK_POINTING_DEVICE_MINIMUM_SNIPING_DPI;
@@ -92,6 +93,13 @@ void bkpd_modes_init(void) {
     g_bkpd_config.modes_config[MODE_NORMAL].max_dpi_steps     = BK_POINTING_DEVICE_DPI_STEPS;
     g_bkpd_config.modes_config[MODE_NORMAL].dpi_per_step     = BK_POINTING_DEVICE_DEFAULT_DPI_CONFIG_STEP;
     g_bkpd_config.modes_config[MODE_NORMAL].minimum_dpi     = BK_POINTING_DEVICE_MINIMUM_DEFAULT_DPI;
+}
+
+void bkpd_mode_set_activate_on_layer(uint8_t mode_id, uint8_t activate_on_layer) {
+    if(!bkpd_mode_is_valid(mode_id)) return;
+    printf("set activate on layer, mode_id: %d, activate_on_layer: %d\n", mode_id, activate_on_layer);
+    g_bkpd_config.modes_config[mode_id].activate_on_layer = activate_on_layer;
+    write_bkpd_config_to_eeprom();
 }
 
 uint16_t bkpd_get_highest_mode_keycode(void) {

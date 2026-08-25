@@ -77,3 +77,5 @@ bool bkpd_mode_is_sniping(void);
 bool bkpd_mode_should_handle_rgb(void);
 report_mouse_t bkpd_mode_custom_process(report_mouse_t mouse_report);
 void bkpd_custom_mode_set_keys(uint8_t mode_id, uint8_t *mode_config);
+void bkpd_custom_mode_set_keys(uint8_t mode_id, uint8_t *mode_config);
+void bkpd_mode_set_activate_on_layer(uint8_t mode_id, uint8_t activate_on_layer);

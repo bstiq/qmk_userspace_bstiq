@@ -32,6 +32,7 @@ enum argos_pointer_command_id {
     argos_id_pointer_command_id_set_auto_mouse_layer_enabled = 0x05,
     argos_id_pointer_command_id_set_auto_precision_on_mouse_layer_enabled = 0x06,
     argos_id_pointer_command_id_set_custom_mode = 0x07,
+    argos_id_pointer_command_id_set_activate_on_layer = 0x08,
 };
 #endif
 
@@ -44,6 +45,7 @@ typedef union {
         uint8_t dpi_per_step; // up to 256 config step at a time. should be more than enough
         uint8_t max_dpi_steps: 8; // we can optionally limit the max DPI to a certain amount of bytes
         uint16_t minimum_dpi;
+        uint8_t activate_on_layer; 
     } __attribute__((packed));
 } bkpd_mode_t;
 
