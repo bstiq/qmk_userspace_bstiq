@@ -33,19 +33,20 @@
 #    include "argos.h"
 #endif
 
-#define BK_POINTING_DEVICE_MINIMUM_DEFAULT_DPI 300
-#define BK_POINTING_DEVICE_DEFAULT_DPI_CONFIG_STEP 50
+#define BK_POINTING_DEVICE_MINIMUM_DEFAULT_DPI 100
+#define BK_POINTING_DEVICE_DEFAULT_DPI_CONFIG_STEP 100
 #define BK_POINTING_DEVICE_MINIMUM_SNIPING_DPI 100
-#define BK_POINTING_DEVICE_SNIPING_DPI_CONFIG_STEP 50
+#define BK_POINTING_DEVICE_SNIPING_DPI_CONFIG_STEP 100
 // etc etc
 
 #define BK_POINTING_DEVICE_NORMAL_DEFAULT_STEP 3
 // etc etc
 
-#define BK_POINTING_DEVICE_DPI_STEPS 60
-#define BK_POINTING_DEVICE_SNIPING_DPI_STEPS 40
+#define BK_POINTING_DEVICE_DPI_STEPS 30
+#define BK_POINTING_DEVICE_SNIPING_DPI_STEPS 20
 
 extern bkpd_config_t g_bkpd_config;
+extern int8_t changing_dpi_settings_for_mode;
 
 // pointers to different functions for each mode
 typedef struct {
@@ -87,12 +88,16 @@ void bkpd_modes_init(void) {
         g_bkpd_config.modes_config[i].max_dpi_steps     = BK_POINTING_DEVICE_SNIPING_DPI_STEPS;
         g_bkpd_config.modes_config[i].dpi_per_step     = BK_POINTING_DEVICE_SNIPING_DPI_CONFIG_STEP;
         g_bkpd_config.modes_config[i].minimum_dpi     = BK_POINTING_DEVICE_MINIMUM_SNIPING_DPI;
+        
+        // set default step to a big higher than minimum
+        g_bkpd_config.modes_config[i].current_dpi_step = 4;
     }
 
     // edit specific values
     g_bkpd_config.modes_config[MODE_NORMAL].max_dpi_steps     = BK_POINTING_DEVICE_DPI_STEPS;
     g_bkpd_config.modes_config[MODE_NORMAL].dpi_per_step     = BK_POINTING_DEVICE_DEFAULT_DPI_CONFIG_STEP;
     g_bkpd_config.modes_config[MODE_NORMAL].minimum_dpi     = BK_POINTING_DEVICE_MINIMUM_DEFAULT_DPI;
+    g_bkpd_config.modes_config[MODE_NORMAL].current_dpi_step = 6;
 }
 
 void bkpd_mode_set_activate_on_layer(uint8_t mode_id, uint8_t activate_on_layer) {
@@ -168,12 +173,10 @@ void bkpd_mode_release(uint8_t mode_id) {
             // nothing to do with primary mode, we kept it active
             // simply disable secondary sniping mode
             sniping_modifier_active = false;
-            printf("1\n");
         }
         // no secondary active, just go back to normal mode
         else{
             bkpd_deactivate_old_mode_and_activate_new(MODE_NORMAL);
-            printf("2\n");
         }
     }
     // if we are releasing another mode, we need to check if sniping was enabled.
@@ -181,7 +184,6 @@ void bkpd_mode_release(uint8_t mode_id) {
     else{
         // are we in a mode combo?
         if(sniping_modifier_active) {
-            printf("3\n");
             // activate primary mode as sniping
             bkpd_deactivate_old_mode_and_activate_new(MODE_SNIPING);
             // deactivate secondary sniping mode
@@ -190,12 +192,10 @@ void bkpd_mode_release(uint8_t mode_id) {
         // no mode combo - just go back to normal mode
         else{
             bkpd_deactivate_old_mode_and_activate_new(MODE_NORMAL);
-            printf("4\n");
         }
     }
 
     // in all cases, affect DPI
-    printf("applying dpi for mode_id: %d, dpi: %d\n", active_mode->id, bkpd_mode_get_dpi(active_mode->id));
     bkpd_mode_apply_dpi(active_mode->id);
 }
 
@@ -272,36 +272,31 @@ bool bkpd_mode_is_sniping(void) {
 
 // used to override Argos color manager
 bool bkpd_mode_should_handle_rgb(void) {
-    return (active_mode->id > 0);
+    if(changing_dpi_settings_for_mode >= 0) {
+        return true;
+    }
+    return false;
 }
 
-// used by argos
+// used by local shortcuts
 void bkpd_mode_cycle_dpi(uint8_t mode_id, bool forward) {
-    // compare bytes etc - TODO
-    // get the current mode's max dpi
-    uint8_t max_dpi_steps = g_bkpd_config.modes_config[mode_id].max_dpi_steps;
+    uint16_t current_dpi = bkpd_mode_get_dpi(mode_id);
+    int16_t new_dpi = current_dpi;
 
-    // get the current dpi step
-    uint8_t current_dpi_step = bkpd_mode_get_dpi_per_step(mode_id);
-    // calculate the new dpi step, could be higher than 256 (meh)
-    uint16_t new_dpi_step = current_dpi_step + (forward ? 1 : -1);
-
-    // if the new dpi step is greater than the max dpi steps, wrap around with modulo
-    new_dpi_step = new_dpi_step % max_dpi_steps;
-
-    // save the new dpi step
-    g_bkpd_config.modes_config[mode_id].current_dpi_step = new_dpi_step;
-
-    // affect in EEPROM
-    write_bkpd_config_to_eeprom();
-
-    // calculate new DPI
-    uint16_t new_dpi = new_dpi_step * bkpd_mode_get_dpi_per_step(mode_id) + BK_POINTING_DEVICE_MINIMUM_DEFAULT_DPI;
-    printf("new_dpi: %d\n", new_dpi);
-    // if mode_id is active, update current DPI
-    if (active_mode == &modes[mode_id]) {
-        pointing_device_set_cpi(new_dpi);
+    if(forward) {
+        new_dpi += bkpd_mode_get_dpi_per_step(mode_id);
+    } else {
+        new_dpi -= bkpd_mode_get_dpi_per_step(mode_id);
     }
+
+    // cycle on ends
+    if(new_dpi > bkpd_mode_get_max_dpi(mode_id)) 
+        new_dpi = bkpd_mode_get_minimum_dpi(mode_id);
+    if(new_dpi < bkpd_mode_get_minimum_dpi(mode_id) || new_dpi < 0) 
+        new_dpi = bkpd_mode_get_max_dpi(mode_id);
+
+    const uint16_t new_dpi_uint16 = (uint16_t)new_dpi;
+    bkpd_mode_change_dpi(mode_id, new_dpi_uint16);
 }
 
 void bkpd_mode_set_invert(uint8_t mode_id, uint8_t axis_index, bool invert) {
@@ -341,17 +336,11 @@ uint16_t bkpd_mode_get_dpi_per_step(uint8_t mode_id) {
     return g_bkpd_config.modes_config[mode_id].dpi_per_step;
 }
 
-void bkpd_modes_init_default_config(void) {
-    // set default values for all modes
-    for(uint8_t i = 0; i < MODE_LAST; i++) {
-        g_bkpd_config.modes_config[i].current_dpi_step = BK_POINTING_DEVICE_NORMAL_DEFAULT_STEP;
-    }
-}
-
 /* -----------------------------------------------------------------------------
             Helper functions for current active mode */
 
 void bkpd_mode_current_cycle_dpi(bool forward) {
+    printf("cycle dpi for mode_id: %d, forward: %d\n", active_mode->id, forward);
     bkpd_mode_cycle_dpi(active_mode->id, forward);
 }
 

@@ -38,5 +38,3 @@
 #undef RGBLIGHT_LED_COUNT
 #endif
 #define RGBLIGHT_LED_COUNT 72
-
-#define LED_POINTER_MODE_INDICATOR_INDEX 18 // skip underglow, 0-indexed

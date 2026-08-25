@@ -33,47 +33,12 @@ bool bkpd_is_changing_dpi_settings(void) {
     return (changing_dpi_settings_for_mode >= 0);
 }
 
+// RGB indicators on the mouse layer
 bool rgb_matrix_indicators_advanced_bk_pointing_device(uint8_t led_min, uint8_t led_max) {
     const uint8_t layer = get_highest_layer(layer_state);
 
     if (layer != AUTO_MOUSE_DEFAULT_LAYER) {
         return true; // process further in parent function
-    }
-
-    // Pointing modes -------------------------------------------------------
-    // if we are in a specific pointer mode, light up specific LEDs 
-    // to indicate to the user what is happening
-    uint8_t mode_id = bkpd_mode_get_active_id();
-
-    if(mode_id > 0){
-        RGB      color         = {0, 255, 0}; // default green
-        // custom layer color if Argos is enabled
-#ifdef COMMUNITY_MODULE_ARGOS_ENABLE
-        argos_rgb_get_layer_color(AUTO_MOUSE_DEFAULT_LAYER, &color);
-#endif
-        // handle brightness
-        color.r = (color.r * rgb_matrix_get_val()) / RGB_MATRIX_MAXIMUM_BRIGHTNESS;
-        color.g = (color.g * rgb_matrix_get_val()) / RGB_MATRIX_MAXIMUM_BRIGHTNESS;
-        color.b = (color.b * rgb_matrix_get_val()) / RGB_MATRIX_MAXIMUM_BRIGHTNESS;
-
-        // calculate the index of the LEDs to light up, primary side only
-        const uint16_t index = (mode_id + LED_POINTER_MODE_INDICATOR_INDEX - 1);
-        const uint16_t index_sniping_modifier = (LED_POINTER_MODE_INDICATOR_INDEX + MODE_SNIPING - 1);
-        
-        for (int i = led_min; i < led_max; i++) {
-            // sniping is handled differently: it can be active either through 
-            // a mode, or through a modifier
-            uint8_t index_symmetric = i % (RGBLIGHT_LED_COUNT / 2);
-            if(index_symmetric == index || (index_symmetric == index_sniping_modifier && bkpd_mode_is_sniping())
-                || index_symmetric < LED_POINTER_MODE_INDICATOR_INDEX){ // keep LEDs before it on (ie underglow)
-                rgb_matrix_set_color(i, color.r, color.g, color.b);
-            }
-            // otherwise, turn in off
-            else {
-                rgb_matrix_set_color(i, 0, 0, 0);
-            }
-        }
-        return false;
     }
 
     // DPI change  -------------------------------------------------------
@@ -94,14 +59,17 @@ bool rgb_matrix_indicators_advanced_bk_pointing_device(uint8_t led_min, uint8_t 
         max_steps    = g_bkpd_config.modes_config[changing_dpi_settings_for_mode].max_dpi_steps;
         current_step = g_bkpd_config.modes_config[changing_dpi_settings_for_mode].current_dpi_step;
 
-        // up to 15 LEDs MAX, otherwise we divide by 15
-        if (max_steps > 16) {
-            uint8_t modulo = max_steps / 16 + 1; // round up
+        // up to 8 LEDs MAX, otherwise we divide
+        uint8_t max_led_steps = 8;
+        if (max_steps > max_led_steps) {
+            uint8_t modulo = max_steps / max_led_steps + 1; // round up
             steps_per_led  = modulo;
-            max_steps      = max_steps / modulo + max_steps % 15;
+            max_steps      = max_steps / modulo + max_steps % (max_led_steps-1);
         } else {
             steps_per_led = 1;
         }
+
+        printf("max_steps: %d, current_step: %d, steps_per_led: %d\n", max_steps, current_step, steps_per_led);
 
         // max leds we will light, we divide by 2 otherwise it's a lot of LEDs
         for (int i = led_min; i < led_max; i++) {
@@ -115,12 +83,17 @@ bool rgb_matrix_indicators_advanced_bk_pointing_device(uint8_t led_min, uint8_t 
                 uint8_t last_step = min_index + current_step / steps_per_led;
                 if (index_symmetric == last_step) {
                     // half brightness for odd DPI steps (2 steps/LED)
-                    if (steps_per_led == 2 && current_step % steps_per_led == 0) {
-                        rgb_matrix_set_color(i, (color.r + 255) / 2, color.g / 2, color.b / 2);
+                    // if (steps_per_led == 2 && current_step % steps_per_led == 0) {
+                    //     rgb_matrix_set_color(i, (color.r + 255) / 2, color.g / 2, 0);
+                    // }
+                    if(steps_per_led > 1 && current_step % steps_per_led != 0) {
+                        uint8_t offset = current_step % steps_per_led;
+                        // TODO this is hardcoded, meh
+                        rgb_matrix_set_color(i, 255*offset / steps_per_led, 255 * offset / steps_per_led, 0);
                     }
-                    // full brightness for sniping DPI and even DPI steps
+                    // red
                     else {
-                        rgb_matrix_set_color(i, color.r, color.g, color.b);
+                        rgb_matrix_set_color(i, 255, 0, 0);
                     }
                 }
                 // handle LEDs before the current step that are still active

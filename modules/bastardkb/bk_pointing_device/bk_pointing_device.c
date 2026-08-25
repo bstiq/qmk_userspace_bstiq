@@ -67,10 +67,6 @@ static void read_bkpd_config_from_eeprom(void) {
 #endif
 }
 
-void bkpd_init_default_config(void) {
-    bkpd_modes_init_default_config();
-}
-
 /**
  * \brief Save the value of `config` to eeprom.
  *
@@ -269,7 +265,7 @@ bool process_record_bk_pointing_device(uint16_t keycode, keyrecord_t *record) {
 
     // try to process trigger/toggle mode keycodes first
     uint8_t mode = bkpd_mode_from_keycode(keycode);
-    if(mode != 255) {
+    if(mode < MODE_LAST) {
         // figure out if we have a press or a toggle
         uint8_t min_keycode = bkpd_get_lowest_mode_keycode();
         // pressed keycode
@@ -350,7 +346,6 @@ bool process_record_bk_pointing_device(uint16_t keycode, keyrecord_t *record) {
  * DRGSCRL/SNIPING are hold-to-enable; if the layer drops while they are
  * held, the key-up is resolved on layer 0 and the mode never turns off.
  */
-// TODO test full range from introspection.h
 bool is_mouse_record_kb(uint16_t keycode, keyrecord_t *record) {
     if(keycode >= DPI_MOD && keycode <= PMODE_LAST) {
         return true;
@@ -382,7 +377,7 @@ void keyboard_post_init_bk_pointing_device(void) {
 
     if (!g_bkpd_config.has_copied_qmk_config) {
         g_bkpd_config.has_copied_qmk_config = true;
-        bkpd_init_default_config();
+        bkpd_modes_init();
         write_bkpd_config_to_eeprom();
     }
 
@@ -393,17 +388,14 @@ void keyboard_post_init_bk_pointing_device(void) {
  * \brief Switch to a specific mode on layer if that option is enabled.
  */
 layer_state_t layer_state_set_bk_pointing_device(layer_state_t state) {
-    printf("layer_state_set_bk_pointing_device: state: %d\n", state);
     if (layer_state_cmp(state, AUTO_MOUSE_DEFAULT_LAYER) && \
             g_bkpd_config.auto_precision_on_mouse_layer_enabled) {
         bkpd_mode_set_active(MODE_SNIPING);
     } else { 
         // test if any of the custom modes are activated on this layer
         for(int i = 0; i < MODE_LAST; i++) {
-            printf("mode_id: %d, activate_on_layer: %d\n", i, g_bkpd_config.modes_config[i].activate_on_layer);
             if(layer_state_cmp(state, g_bkpd_config.modes_config[i].activate_on_layer)) {
                 bkpd_mode_set_active(i);
-                printf("bkpd_mode_set_active: %d\n", i);
                 return state;
             }
         }
