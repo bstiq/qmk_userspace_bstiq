@@ -43,6 +43,8 @@
 #    include "digitizer.h"
 #endif
 
+#define BK_POINTING_DEVICE_BUFFER_SIZE_DIGITIZER 600
+
 ASSERT_COMMUNITY_MODULES_MIN_API_VERSION(1, 0, 0);
 
 bkpd_config_t g_bkpd_config                  = {0};
@@ -444,11 +446,23 @@ bool digitizer_task_kb(digitizer_t *const digitizer_state) {
                 }
             }
             if(report.x != 0 || report.y != 0) {
+                // TODO: issue with bounceback in all modes when going too fast.
                 // x and y are independent of DPI, so we need to manually scale them.
-                // TODO
+                // get DPI for current mode
+                uint16_t dpi = bkpd_mode_get_dpi(bkpd_mode_get_active_id());
+                // get MAX dpi possible for that mode
+                uint16_t max_dpi = bkpd_mode_get_max_dpi(bkpd_mode_get_active_id());
+                // printf("dpi: %d, max_dpi: %d\n", dpi, max_dpi);
+                // scale x and y by DPI and MAX DPI
+                // printf("report.x: %d, report.y: %d\n", report.x, report.y);
+                report.x *= dpi;
+                report.x /= max_dpi;
+                report.y *= dpi;
+                report.y /= max_dpi;
+                // printf("report.x: %d, report.y: %d\n", report.x, report.y);
 
                 report = bkpd_process_active_mode(report);
-                report = pointing_device_task_user(report);
+                // report = pointing_device_task_user(report);
                 // translate mouse report back into digitizer report if we are in normal or sniping mode
                 // TODO this is a hack, we should later figure out if there is a transformation or not.
                 digitizer_state->contacts[finger_index].x = report.x;

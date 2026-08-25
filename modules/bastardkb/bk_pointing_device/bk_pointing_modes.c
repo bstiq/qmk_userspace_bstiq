@@ -187,6 +187,7 @@ void bkpd_mode_release(uint8_t mode_id) {
     }
 
     // in all cases, affect DPI
+    printf("applying dpi for mode_id: %d, dpi: %d\n", active_mode->id, bkpd_mode_get_dpi(active_mode->id));
     bkpd_mode_apply_dpi(active_mode->id);
 }
 
@@ -507,6 +508,7 @@ report_mouse_t bkpd_mode_cursor_process(report_mouse_t mouse_report) {
     if (abs(buffer_x) > BK_POINTING_DEVICE_CURSOR_BUFFER_SIZE_X) {
 #ifdef COMMUNITY_MODULE_ARGOS_ENABLE
         argos_keycode_tap(buffer_x > 0 ? KC_RIGHT : KC_LEFT);
+        printf("buffer x: %d\n", buffer_x);
 #else
         tap_code(buffer_x > 0 ? KC_RIGHT : KC_LEFT);
 #endif
