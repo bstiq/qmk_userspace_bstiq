@@ -69,8 +69,6 @@ bool rgb_matrix_indicators_advanced_bk_pointing_device(uint8_t led_min, uint8_t 
             steps_per_led = 1;
         }
 
-        printf("max_steps: %d, current_step: %d, steps_per_led: %d\n", max_steps, current_step, steps_per_led);
-
         // max leds we will light, we divide by 2 otherwise it's a lot of LEDs
         for (int i = led_min; i < led_max; i++) {
             // TODO handle non-argos? (not really possible right now)
