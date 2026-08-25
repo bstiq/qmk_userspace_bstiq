@@ -42,3 +42,4 @@
 #define PCUSTOM5_TOG 0x7E1D
 #define INVX 0x7E1E
 #define INVY 0x7E1F
+#define PMODE_LAST 0x7E20 // used only for determining mouse keys, keep last

@@ -86,6 +86,7 @@ void bkpd_mode_release(uint8_t mode_id);
 
 #ifdef POINTING_DEVICE_DRIVER_digitizer
 bool digitizer_task_kb(digitizer_t *const digitizer_state);
+void accumulate_delta_x_y(digitizer_t *const digitizer_state, digitizer_t *const last_report, uint16_t *delta_x, uint16_t *delta_y);
 #endif
 
 // NOTE: made to work on branch bkb-pointing-device

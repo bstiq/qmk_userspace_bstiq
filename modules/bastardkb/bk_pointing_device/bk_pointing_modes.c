@@ -220,7 +220,8 @@ void bkpd_mode_set_active(uint8_t id) {
                 }
             }
         }
-        // affect DPI
+        // affect DPI. This is for trackball only. For trackpads, this is handled directly
+        // in bk_pointing_device.c > digitizer_task_kb()
         bkpd_mode_apply_dpi(id);
     }
 }

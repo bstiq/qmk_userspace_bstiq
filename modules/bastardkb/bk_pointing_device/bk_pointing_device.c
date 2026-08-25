@@ -224,12 +224,14 @@ bool bkpd_get_auto_precision_on_mouse_layer_enabled(void) {
 }
 
 /**
- * \brief Implement pointing modes
+ * \brief Process pointing modes
  */
 report_mouse_t pointing_device_task_bk_pointing_device(report_mouse_t mouse_report) {
     if (is_keyboard_master()) {
+#ifndef POINTING_DEVICE_DRIVER_digitizer
         mouse_report = bkpd_process_active_mode(mouse_report);
         mouse_report = pointing_device_task_user(mouse_report);
+#endif
     }
     return mouse_report;
 }
@@ -339,19 +341,10 @@ bool process_record_bk_pointing_device(uint16_t keycode, keyrecord_t *record) {
  */
 // TODO test full range from introspection.h
 bool is_mouse_record_kb(uint16_t keycode, keyrecord_t *record) {
-    switch (keycode) {
-        case DPI_MOD:
-        case DPI_RMOD:
-        case S_D_MOD:
-        case S_D_RMOD:
-        case SNIPING:
-        case SNP_TOG:
-        case DRGSCRL:
-        case DRG_TOG:
-            return true;
-        default:
-            return is_mouse_record_user(keycode, record);
+    if(keycode >= DPI_MOD && keycode <= PMODE_LAST) {
+        return true;
     }
+    return is_mouse_record_user(keycode, record);
 }
 #endif // POINTING_DEVICE_AUTO_MOUSE_ENABLE
 
@@ -389,7 +382,6 @@ void keyboard_post_init_bk_pointing_device(void) {
  * \brief Switch to precision mode on mouse layer if that option is enabled.
  */
 layer_state_t layer_state_set_bk_pointing_device(layer_state_t state) {
-    printf("layer_state_set_bk_pointing_device: state: %d, auto_precision_on_mouse_layer_enabled: %d\n", state, g_bkpd_config.auto_precision_on_mouse_layer_enabled);
     if (layer_state_cmp(state, AUTO_MOUSE_DEFAULT_LAYER) && \
             g_bkpd_config.auto_precision_on_mouse_layer_enabled) {
         bkpd_mode_set_active(MODE_SNIPING);
@@ -404,34 +396,67 @@ layer_state_t layer_state_set_bk_pointing_device(layer_state_t state) {
  * We override the kb task, because QMK does not provide (as of coding this) a module-level override.
  */
 #ifdef POINTING_DEVICE_DRIVER_digitizer
+
+void accumulate_delta_x_y(digitizer_t *const digitizer_state, digitizer_t *const last_report, uint16_t *delta_x, uint16_t *delta_y) {
+    for (int i = 0; i < DIGITIZER_CONTACT_COUNT; i++) {
+#    if DIGITIZER_FINGER_COUNT > 0
+        if (i < DIGITIZER_FINGER_COUNT) {
+            *delta_x += digitizer_state->contacts[i].x - last_report->contacts[i].x;
+            *delta_y += digitizer_state->contacts[i].y - last_report->contacts[i].y;
+        }
+#    endif
+    }
+}
 bool digitizer_task_kb(digitizer_t *const digitizer_state) {
-    // TODO
-    //     report_mouse_t     report      = {0};
-    //     static digitizer_t last_report = {0};
-    //     uint16_t           delta_x     = 0;
-    //     uint16_t           delta_y     = 0;
+    report_mouse_t     report      = {0};
+    static digitizer_t last_report = {0};
+    uint16_t           delta_x     = 0;
+    uint16_t           delta_y     = 0;
 
-    //     if (!digitizer_task_user(digitizer_state)) {
-    //         return false;
-    //     }
+    printf("1\n");
 
-    //     for (int i = 0; i < DIGITIZER_CONTACT_COUNT; i++) {
-    // #    if DIGITIZER_FINGER_COUNT > 0
-    //         if (i < DIGITIZER_FINGER_COUNT) {
-    //             delta_x += digitizer_state->contacts[i].x - last_report.contacts[i].x;
-    //             delta_y += digitizer_state->contacts[i].y - last_report.contacts[i].y;
-    //         }
-    // #    endif
-    //     }
+    // TODO. for some reason, having this here returns even if !false. weird.
+    // if (!digitizer_task_user(digitizer_state)) {
+    //     return false;
+    // }
 
-    //     // "fake copy" it into the mouse report so that the auto mouse layer may trigger if needed
-    //     report.x = delta_x;
-    //     report.y = delta_y;
-    //     pointing_device_task_auto_mouse(report);
+    accumulate_delta_x_y(digitizer_state, &last_report, &delta_x, &delta_y);
 
-    //     last_report = *digitizer_state; // copy the state to the last report
+    // "fake copy" it into the mouse report so that the auto mouse layer may trigger if needed
+    report.x = delta_x;
+    report.y = delta_y;
+    pointing_device_task_auto_mouse(report);
+
+    last_report = *digitizer_state; // copy the state to the last report
 
     // trigger a button state changed in master
+
+    // Next, process pointing modes
+    // We use the "converted" report
+    if (is_keyboard_master()) {
+        if(bkpd_mode_get_active_id() != MODE_NORMAL) {
+            // figure out which finger is moving
+            int finger_index = -1;
+            for (int i = 0; i < DIGITIZER_CONTACT_COUNT; i++) {
+                if(digitizer_state->contacts[i].x != 0 || digitizer_state->contacts[i].y != 0) {
+                    finger_index = i;
+                    break;
+                }
+            }
+            if(report.x != 0 || report.y != 0) {
+                // x and y are independent of DPI, so we need to manually scale them.
+                // TODO
+
+                report = bkpd_process_active_mode(report);
+                report = pointing_device_task_user(report);
+                // translate mouse report back into digitizer report if we are in normal or sniping mode
+                // TODO this is a hack, we should later figure out if there is a transformation or not.
+                digitizer_state->contacts[finger_index].x = report.x;
+                digitizer_state->contacts[finger_index].y = report.y;
+            }
+        }
+    }
+
     return true;
 }
 

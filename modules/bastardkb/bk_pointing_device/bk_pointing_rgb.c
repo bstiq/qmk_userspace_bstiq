@@ -57,15 +57,15 @@ bool rgb_matrix_indicators_advanced_bk_pointing_device(uint8_t led_min, uint8_t 
         color.b = (color.b * rgb_matrix_get_val()) / RGB_MATRIX_MAXIMUM_BRIGHTNESS;
 
         // calculate the index of the LEDs to light up, primary side only
-        const uint16_t index = (mode_id + LED_MODE_INDICATOR_INDEX - 1);
-        const uint16_t index_sniping_modifier = (LED_MODE_INDICATOR_INDEX + MODE_SNIPING - 1);
+        const uint16_t index = (mode_id + LED_POINTER_MODE_INDICATOR_INDEX - 1);
+        const uint16_t index_sniping_modifier = (LED_POINTER_MODE_INDICATOR_INDEX + MODE_SNIPING - 1);
         
         for (int i = led_min; i < led_max; i++) {
             // sniping is handled differently: it can be active either through 
             // a mode, or through a modifier
             uint8_t index_symmetric = i % (RGBLIGHT_LED_COUNT / 2);
             if(index_symmetric == index || (index_symmetric == index_sniping_modifier && bkpd_mode_is_sniping())
-                || index_symmetric < LED_MODE_INDICATOR_INDEX){ // keep LEDs before it on (ie underglow)
+                || index_symmetric < LED_POINTER_MODE_INDICATOR_INDEX){ // keep LEDs before it on (ie underglow)
                 rgb_matrix_set_color(i, color.r, color.g, color.b);
             }
             // otherwise, turn in off
