@@ -392,6 +392,10 @@ layer_state_t layer_state_set_bk_pointing_device(layer_state_t state) {
             g_bkpd_config.auto_precision_on_mouse_layer_enabled) {
         bkpd_mode_set_active(MODE_SNIPING);
     } else { 
+        // first, deactivate auto sniping mode (legacy)
+        if(g_bkpd_config.auto_precision_on_mouse_layer_enabled){
+            bkpd_mode_release(MODE_SNIPING);
+        }
         // test if any of the custom modes are activated on this layer
         for(int i = 0; i < MODE_LAST; i++) {
             if(layer_state_cmp(state, g_bkpd_config.modes_config[i].activate_on_layer)) {
