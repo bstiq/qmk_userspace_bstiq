@@ -85,9 +85,9 @@ void argos_rgb_get_layer_color(uint8_t layer, RGB *rgb) {
 
 // The rgb module code is called BEFORE the KB code, so we need to override the KB code.
 // We can't do that, so instead we override the user code, so that the keyboard code detects it and does not execute.
-bool rgb_matrix_indicators_advanced_user(uint8_t led_min, uint8_t led_max) {
-    return false;
-}
+// bool rgb_matrix_indicators_advanced_user(uint8_t led_min, uint8_t led_max) {
+//     return false;
+// }
 
 /*
     TODO: we don't need row and col here.
