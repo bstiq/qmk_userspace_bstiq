@@ -439,7 +439,7 @@ bool digitizer_task_kb(digitizer_t *const digitizer_state) {
         }
 
         if(contact_count > 0) {
-            // disable clicks for anything else than sniping
+            // sniping does not need any special processing, so we just skip it (simple DPI change)
             if(bkpd_mode_get_active_id() != MODE_SNIPING) {
                 // disable finger taps for anything else than normal mode
                 if(bkpd_mode_get_active_id() != MODE_NORMAL) {
@@ -447,7 +447,7 @@ bool digitizer_task_kb(digitizer_t *const digitizer_state) {
                 }
                 
                 report_mouse_t report = {0};
-                // x and y reports from the digitizer don't have DPI applied yet, so we need to manually apply it.
+                // x and y reports from the digitizer don't have DPI applied yet, so we need to manually scale it
                 uint16_t dpi = bkpd_mode_get_dpi(bkpd_mode_get_active_id());
                 uint16_t max_dpi = bkpd_mode_get_max_dpi(bkpd_mode_get_active_id());
                 int16_t x = digitizer_state->contacts[first_contact_id].x * dpi / max_dpi;
@@ -457,7 +457,7 @@ bool digitizer_task_kb(digitizer_t *const digitizer_state) {
                     report.y = y - last_report_scaled.contacts[first_contact_id].y;
 
                     // only process non-default modes
-                    if(bkpd_mode_get_active_id() != MODE_NORMAL){
+                    if(bkpd_mode_get_active_id() != MODE_NORMAL && bkpd_mode_get_active_id() != MODE_SNIPING){
                         report = bkpd_process_active_mode(report);
                     }
                     // in normal mode, no processing of values, only auto mouse layer triggering if needed
