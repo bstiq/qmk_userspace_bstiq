@@ -415,78 +415,74 @@ layer_state_t layer_state_set_bk_pointing_device(layer_state_t state) {
  */
 #ifdef POINTING_DEVICE_DRIVER_digitizer
 
-void calculate_delta_x_y(digitizer_t *const digitizer_state, digitizer_t *const last_report, uint16_t *delta_x, uint16_t *delta_y) {
-    for (int i = 0; i < DIGITIZER_CONTACT_COUNT; i++) {
-#    if DIGITIZER_FINGER_COUNT > 0
-        if (i < DIGITIZER_FINGER_COUNT) {
-            *delta_x += digitizer_state->contacts[i].x - last_report->contacts[i].x;
-            *delta_y += digitizer_state->contacts[i].y - last_report->contacts[i].y;
-        }
-#    endif
-    }
+void calculate_delta_x_y(uint8_t contact, digitizer_t *const digitizer_state, digitizer_t *const last_report, uint16_t *delta_x, uint16_t *delta_y) {
+    *delta_x += digitizer_state->contacts[contact].x - last_report->contacts[contact].x;
+    *delta_y += digitizer_state->contacts[contact].y - last_report->contacts[contact].y;
 }
 bool digitizer_task_kb(digitizer_t *const digitizer_state) {
-    report_mouse_t     report      = {0};
-    static digitizer_t last_report = {0};
-    static uint16_t           delta_x     = 0;
-    static uint16_t           delta_y     = 0;
+    // report_mouse_t     report      = {0};
+    // static digitizer_t last_report = {0};
+    // static uint16_t           delta_x     = 0;
+    // static uint16_t           delta_y     = 0;
 
-    // TODO. for some reason, having this here returns even if !false. weird.
-    // if (!digitizer_task_user(digitizer_state)) {
-    //     return false;
+    // // TODO. for some reason, having this here returns even if !false. weird.
+    // // if (!digitizer_task_user(digitizer_state)) {
+    // //     return false;
+    // // }
+
+    // // trigger a button state changed in master
+
+    // // Next, process pointing modes
+    // // We use the "converted" report
+    // if (is_keyboard_master()) {
+    //     if(bkpd_mode_get_active_id() != MODE_NORMAL) {
+    //         // figure out which finger is moving, we only support one finger at a time for special modes
+    //         int finger_index = -1;
+    //         for (int i = 0; i < DIGITIZER_CONTACT_COUNT; i++) {
+    //             if(digitizer_state->contacts[i].x != 0 || digitizer_state->contacts[i].y != 0) {
+    //                 finger_index = i;
+    //                 break;
+    //             }
+    //         }
+
+    //         calculate_delta_x_y(finger_index, digitizer_state, &last_report, &delta_x, &delta_y);
+
+    //         // "fake copy" it into the mouse report so that the auto mouse layer may trigger if needed
+    //         report.x = delta_x;
+    //         report.y = delta_y;
+    //         pointing_device_task_auto_mouse(report);
+        
+    //         last_report = *digitizer_state; // copy the state to the last report
+
+    //         if(report.x != 0 || report.y != 0) {
+    //             // TODO: issue with bounceback in all modes when going too fast.
+    //             // x and y are independent of DPI, so we need to manually scale them.
+    //             // get DPI for current mode
+    //             // uint16_t dpi = bkpd_mode_get_dpi(bkpd_mode_get_active_id());
+    //             // get MAX dpi possible for that mode
+    //             // uint16_t max_dpi = bkpd_mode_get_max_dpi(bkpd_mode_get_active_id());
+    //             // printf("dpi: %d, max_dpi: %d\n", dpi, max_dpi);
+    //             // scale x and y by DPI and MAX DPI
+    //             printf("1. report.x: %d, report.y: %d\n", report.x, report.y);
+    //             // report.x *= dpi;
+    //             // report.x /= max_dpi;
+    //             // report.y *= dpi;
+    //             // report.y /= max_dpi;
+    //             printf("2. report.x: %d, report.y: %d\n", report.x, report.y);
+
+    //             report = bkpd_process_active_mode(report);
+    //             // reset local buffer if pointing mode triggered
+    //             delta_x = report.x;
+    //             delta_y = report.y;
+    //             // TODO reset current report if pointer disabled
+    //             // report = pointing_device_task_user(report);
+    //             // translate mouse report back into digitizer report if we are in normal or sniping mode
+    //             // TODO this is a hack, we should later figure out if there is a transformation or not.
+    //             digitizer_state->contacts[finger_index].x = report.x;
+    //             digitizer_state->contacts[finger_index].y = report.y;
+    //         }
+    //     }
     // }
-
-    calculate_delta_x_y(digitizer_state, &last_report, &delta_x, &delta_y);
-
-    // "fake copy" it into the mouse report so that the auto mouse layer may trigger if needed
-    report.x = delta_x;
-    report.y = delta_y;
-    pointing_device_task_auto_mouse(report);
-
-    last_report = *digitizer_state; // copy the state to the last report
-
-    // trigger a button state changed in master
-
-    // Next, process pointing modes
-    // We use the "converted" report
-    if (is_keyboard_master()) {
-        if(bkpd_mode_get_active_id() != MODE_NORMAL) {
-            // figure out which finger is moving
-            int finger_index = -1;
-            for (int i = 0; i < DIGITIZER_CONTACT_COUNT; i++) {
-                if(digitizer_state->contacts[i].x != 0 || digitizer_state->contacts[i].y != 0) {
-                    finger_index = i;
-                    break;
-                }
-            }
-            if(report.x != 0 || report.y != 0) {
-                // TODO: issue with bounceback in all modes when going too fast.
-                // x and y are independent of DPI, so we need to manually scale them.
-                // get DPI for current mode
-                uint16_t dpi = bkpd_mode_get_dpi(bkpd_mode_get_active_id());
-                // get MAX dpi possible for that mode
-                uint16_t max_dpi = bkpd_mode_get_max_dpi(bkpd_mode_get_active_id());
-                // printf("dpi: %d, max_dpi: %d\n", dpi, max_dpi);
-                // scale x and y by DPI and MAX DPI
-                // printf("report.x: %d, report.y: %d\n", report.x, report.y);
-                report.x *= dpi;
-                report.x /= max_dpi;
-                report.y *= dpi;
-                report.y /= max_dpi;
-                // printf("report.x: %d, report.y: %d\n", report.x, report.y);
-
-                report = bkpd_process_active_mode(report);
-                // reset local buffer if pointing mode triggered
-                delta_x = report.x;
-                delta_y = report.y;
-                // report = pointing_device_task_user(report);
-                // translate mouse report back into digitizer report if we are in normal or sniping mode
-                // TODO this is a hack, we should later figure out if there is a transformation or not.
-                digitizer_state->contacts[finger_index].x = report.x;
-                digitizer_state->contacts[finger_index].y = report.y;
-            }
-        }
-    }
 
     return true;
 }
