@@ -21,8 +21,13 @@
 #include "math.h"
 
 #define BK_POINTING_DEVICE_DRAGSCROLL_BUFFER_SIZE 30
+// #ifdef POINTING_DEVICE_DRIVER_digitizer
+// #define BK_POINTING_DEVICE_CURSOR_BUFFER_SIZE_X 250
+// #define BK_POINTING_DEVICE_CURSOR_BUFFER_SIZE_Y 400
+// #else // trackball
 #define BK_POINTING_DEVICE_CURSOR_BUFFER_SIZE_X 40
 #define BK_POINTING_DEVICE_CURSOR_BUFFER_SIZE_Y 80
+// #endif
 #define BK_POINTING_DEVICE_BRIGHTNESS_BUFFER_SIZE 30
 #define BK_POINTING_DEVICE_ZOOM_BUFFER_SIZE 30
 #define BK_POINTING_DEVICE_VOLUME_BUFFER_SIZE 30
@@ -365,6 +370,8 @@ void bkpd_mode_apply_dpi(uint8_t mode_id) {
     if(sniping_modifier_active) {
         new_dpi = new_dpi/2;
     }
+
+    printf("new_dpi: %d\n", new_dpi);
 
     if (new_dpi == pointing_device_get_cpi()) return;
     pointing_device_set_cpi(new_dpi);

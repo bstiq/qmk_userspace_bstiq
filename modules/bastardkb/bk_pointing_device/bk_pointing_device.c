@@ -416,13 +416,89 @@ layer_state_t layer_state_set_bk_pointing_device(layer_state_t state) {
  */
 #ifdef POINTING_DEVICE_DRIVER_digitizer
 
-void calculate_delta_x_y(uint8_t contact, digitizer_t *const digitizer_state, digitizer_t *const last_report, uint16_t *delta_x, uint16_t *delta_y) {
-    *delta_x += digitizer_state->contacts[contact].x - last_report->contacts[contact].x;
-    *delta_y += digitizer_state->contacts[contact].y - last_report->contacts[contact].y;
+void calculate_delta_x_y(uint8_t contact, digitizer_t *const digitizer_state, digitizer_t *const last_report_scaled, uint16_t *delta_x, uint16_t *delta_y) {
+    *delta_x += digitizer_state->contacts[contact].x - last_report_scaled->contacts[contact].x;
+    *delta_y += digitizer_state->contacts[contact].y - last_report_scaled->contacts[contact].y;
 }
+
+#define INVALID_ID 0xff
+
 bool digitizer_task_kb(digitizer_t *const digitizer_state) {
+    uint8_t contact_count = 0;
+    static uint8_t first_contact_id = INVALID_ID;
+    static bool first_contact = true;
+    static int16_t accu_x = 0;
+    static int16_t accu_y = 0;
+    static digitizer_t last_report_scaled = {0};
+
+    // TODO auto mouse layer
+
+    if(is_keyboard_master()) {
+        for (int i = 0; i < DIGITIZER_FINGER_COUNT; i++) {
+            if(digitizer_state->contacts[i].tip) {
+                contact_count++;
+                if (first_contact_id == INVALID_ID) {
+                    first_contact_id = i;
+                }
+            }
+        }
+        // reset accumulators and last_report_scaled when finger lifts off
+        if(contact_count == 0) {
+            first_contact = true;
+            accu_x = 0;
+            accu_y = 0;
+            last_report_scaled = *digitizer_state;
+        }
+        if(bkpd_mode_get_active_id() != MODE_NORMAL && contact_count > 0) {
+            // disable clicks for anything else than sniping
+            if(bkpd_mode_get_active_id() != MODE_SNIPING) {
+                digitizer_state->contacts[first_contact_id].tip = false; 
+                
+                report_mouse_t report = {0};
+                // x and y reports from the digitizer don't have DPI applied yet, so we need to manually apply it.
+                uint16_t dpi = bkpd_mode_get_dpi(bkpd_mode_get_active_id());
+                uint16_t max_dpi = bkpd_mode_get_max_dpi(bkpd_mode_get_active_id());
+                int16_t x = digitizer_state->contacts[first_contact_id].x * dpi / max_dpi;
+                int16_t y = digitizer_state->contacts[first_contact_id].y * dpi / max_dpi;
+                if(!first_contact) { // ignore first contact, as X/Y values will be weird (haven't impacted last_report_scaled yet)
+                    accu_x += x - last_report_scaled.contacts[first_contact_id].x;
+                    accu_y += y - last_report_scaled.contacts[first_contact_id].y;
+
+                    
+                    report.x = accu_x;
+                    report.y = accu_y;
+                    report = bkpd_process_active_mode(report);
+
+                    // we process the accu in the processing function
+                    // TODO get rid of this and just equal on top + make static
+                    accu_x = 0;
+                    accu_y = 0;
+                }
+                first_contact = false; // TODO reset this to false when finger is released
+
+                last_report_scaled.contacts[first_contact_id].x = x;
+                last_report_scaled.contacts[first_contact_id].y = y;
+
+                // if report has changed to 0, this means we processed the mode (dragscroll, cursor, etc)
+                if(report.x == 0 && report.y == 0) {
+                    // do not process report (keep cursor where it is)
+                    digitizer_state->contacts[first_contact_id].x = 0;
+                    digitizer_state->contacts[first_contact_id].y = 0;
+                }
+
+                // manually process dragscroll if necessary
+                // by emulating a mouse report-0
+                if(report.h != 0 || report.v != 0){
+                    // process_mouse_report(report);
+                    pointing_device_set_report(report);
+                    pointing_device_task();
+                }
+            }
+        }
+    }
+    // timer = 0; // TODO delete this
     // report_mouse_t     report      = {0};
-    // static digitizer_t last_report = {0};
+    // static digitizer_t last_report_scaled = {0};
     // static uint16_t           delta_x     = 0;
     // static uint16_t           delta_y     = 0;
 
@@ -446,14 +522,14 @@ bool digitizer_task_kb(digitizer_t *const digitizer_state) {
     //             }
     //         }
 
-    //         calculate_delta_x_y(finger_index, digitizer_state, &last_report, &delta_x, &delta_y);
+    //         calculate_delta_x_y(finger_index, digitizer_state, &last_report_scaled, &delta_x, &delta_y);
 
     //         // "fake copy" it into the mouse report so that the auto mouse layer may trigger if needed
     //         report.x = delta_x;
     //         report.y = delta_y;
     //         pointing_device_task_auto_mouse(report);
         
-    //         last_report = *digitizer_state; // copy the state to the last report
+    //         last_report_scaled = *digitizer_state; // copy the state to the last report
 
     //         if(report.x != 0 || report.y != 0) {
     //             // TODO: issue with bounceback in all modes when going too fast.
