@@ -411,19 +411,13 @@ layer_state_t layer_state_set_bk_pointing_device(layer_state_t state) {
 }
 
 /**
- * \brief Auto mouse layer implementation for trackpads
+ * \brief Pointer modes implementation for trackpads
  * We override the kb task, because QMK does not provide (as of coding this) a module-level override.
  */
 #ifdef POINTING_DEVICE_DRIVER_digitizer
 
-void calculate_delta_x_y(uint8_t contact, digitizer_t *const digitizer_state, digitizer_t *const last_report_scaled, uint16_t *delta_x, uint16_t *delta_y) {
-    *delta_x += digitizer_state->contacts[contact].x - last_report_scaled->contacts[contact].x;
-    *delta_y += digitizer_state->contacts[contact].y - last_report_scaled->contacts[contact].y;
-}
-
-#define INVALID_ID 0xff
-
 bool digitizer_task_kb(digitizer_t *const digitizer_state) {
+    static const uint8_t INVALID_ID = 0xff;
     uint8_t contact_count = 0;
     static uint8_t first_contact_id = INVALID_ID;
     static bool first_contact = true;
