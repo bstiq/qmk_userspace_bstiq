@@ -427,8 +427,6 @@ bool digitizer_task_kb(digitizer_t *const digitizer_state) {
     uint8_t contact_count = 0;
     static uint8_t first_contact_id = INVALID_ID;
     static bool first_contact = true;
-    static int16_t accu_x = 0;
-    static int16_t accu_y = 0;
     static digitizer_t last_report_scaled = {0};
 
     // TODO auto mouse layer
@@ -445,13 +443,12 @@ bool digitizer_task_kb(digitizer_t *const digitizer_state) {
         // reset accumulators and last_report_scaled when finger lifts off
         if(contact_count == 0) {
             first_contact = true;
-            accu_x = 0;
-            accu_y = 0;
             last_report_scaled = *digitizer_state;
         }
-        if(bkpd_mode_get_active_id() != MODE_NORMAL && contact_count > 0) {
+
+        if(contact_count > 0) {
             // disable clicks for anything else than sniping
-            if(bkpd_mode_get_active_id() != MODE_SNIPING) {
+            if(bkpd_mode_get_active_id() != MODE_SNIPING && bkpd_mode_get_active_id() != MODE_NORMAL) {
                 digitizer_state->contacts[first_contact_id].tip = false; 
                 
                 report_mouse_t report = {0};
@@ -461,18 +458,17 @@ bool digitizer_task_kb(digitizer_t *const digitizer_state) {
                 int16_t x = digitizer_state->contacts[first_contact_id].x * dpi / max_dpi;
                 int16_t y = digitizer_state->contacts[first_contact_id].y * dpi / max_dpi;
                 if(!first_contact) { // ignore first contact, as X/Y values will be weird (haven't impacted last_report_scaled yet)
-                    accu_x += x - last_report_scaled.contacts[first_contact_id].x;
-                    accu_y += y - last_report_scaled.contacts[first_contact_id].y;
+                    report.x = x - last_report_scaled.contacts[first_contact_id].x;
+                    report.y = y - last_report_scaled.contacts[first_contact_id].y;
 
-                    
-                    report.x = accu_x;
-                    report.y = accu_y;
-                    report = bkpd_process_active_mode(report);
-
-                    // we process the accu in the processing function
-                    // TODO get rid of this and just equal on top + make static
-                    accu_x = 0;
-                    accu_y = 0;
+                    // only process non-default modes
+                    if(bkpd_mode_get_active_id() != MODE_NORMAL){
+                        report = bkpd_process_active_mode(report);
+                    }
+                    // in normal mode, auto mouse layer implementation
+                    else{
+                        pointing_device_task_auto_mouse(report);
+                    }
                 }
                 first_contact = false; // TODO reset this to false when finger is released
 
