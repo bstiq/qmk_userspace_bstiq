@@ -1,6 +1,20 @@
+/*
+ * Copyright 2026 Quentin LEBASTARD <bstkbd@gmail.com>
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Publicw License as published by
+ * the Free Software Foundation, either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ */
 
-// Copyright 2026 Quentin LEBASTARD <bstkbd@gmail.com>
-// SPDX-License-Identifier: GPL-2.0-or-later
 #include QMK_KEYBOARD_H
 
 #include "argos.h"
@@ -23,6 +37,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include "argos_exclusive.h"
 
 #if BK_HAS_POINTING_DEVICE
 #include "bk_pointing_device.h"
@@ -36,7 +51,7 @@ ASSERT_COMMUNITY_MODULES_MIN_API_VERSION(1, 0, 0);
 // Whether we are capturing keycodes (testing keymap)
 bool capturing_all_keycodes = false;
 
-// used for LO
+// used for exclusive layers
 bool hold_layer = false;
 layer_state_t LO_layer_state = 0;
 
@@ -423,33 +438,9 @@ bool process_record_argos(uint16_t keycode, keyrecord_t *record) {
         return false; // we captured a keycode, no need to process further
     }
 
-    // process special layer keycodes
-    if(keycode >= LO_0 && keycode <= LO_LAST){
-        uint16_t new_layer_index = keycode - LO_0;
-        static uint8_t held_layer_index = 0;
-        if(record->event.pressed) {
-            // save current config
-            held_layer_index = get_highest_layer(layer_state);
-            // turn off all layers
-            layer_clear();
-            // trigger new layer
-            layer_on(new_layer_index);
-            LO_layer_state = layer_state;
-            hold_layer = true;
-        } else{
-            // release layers
-            layer_clear();
-            hold_layer = false;
-            // go back to old layer
-            layer_on(held_layer_index);
-        }
-
-        // TODO release
-        return false; // we captured a special layer keycode, no need to process further
-    }
-
-    else if(keycode >= LTO_0 && keycode <= LTO_LAST){
-        
+    bool processed_exclusive = process_records_argos_exclusive(keycode, record);
+    if (!processed_exclusive) {
+        return false; // we handled an exclusive keycode, no need to process further
     }
 
     return true;
