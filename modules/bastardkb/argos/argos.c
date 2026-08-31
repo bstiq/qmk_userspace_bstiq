@@ -11,6 +11,7 @@
 #include "eeconfig.h"
 #include "eeprom.h"
 #include "keymap_introspection.h"
+#include "introspection.h"
 #include "nvm_eeprom_eeconfig_internal.h"
 #include "nvm_eeprom_via_internal.h"
 #include "print.h"
@@ -34,6 +35,10 @@ ASSERT_COMMUNITY_MODULES_MIN_API_VERSION(1, 0, 0);
 
 // Whether we are capturing keycodes (testing keymap)
 bool capturing_all_keycodes = false;
+
+// used for LO
+bool hold_layer = false;
+layer_state_t LO_layer_state = 0;
 
 // Magic keycode override
 uint16_t g_argos_magic_keycode_override = 0;
@@ -417,7 +422,43 @@ bool process_record_argos(uint16_t keycode, keyrecord_t *record) {
     if (captured) {
         return false; // we captured a keycode, no need to process further
     }
+
+    // process special layer keycodes
+    if(keycode >= ALO_0 && keycode <= ALO_LAST){
+        uint16_t new_layer_index = keycode - ALO_0;
+        static uint8_t held_layer_index = 0;
+        if(record->event.pressed) {
+            // save current config
+            held_layer_index = get_highest_layer(layer_state);
+            // turn off all layers
+            layer_clear();
+            // trigger new layer
+            layer_on(new_layer_index);
+            LO_layer_state = layer_state;
+            hold_layer = true;
+        } else{
+            // release layers
+            layer_clear();
+            hold_layer = false;
+            // go back to old layer
+            layer_on(held_layer_index);
+        }
+
+        // TODO release
+        return false; // we captured a special layer keycode, no need to process further
+    }
+
     return true;
+}
+
+// process special layer keycodes
+layer_state_t layer_state_set_argos(layer_state_t state) {
+    // if we are holding a "this layer only" keycode, pressing any other layer key will be cancelled.
+    // we only allow the process_record function to release the layer.
+    if (hold_layer) {
+        return LO_layer_state;
+    }
+    return state;
 }
 
 /*
