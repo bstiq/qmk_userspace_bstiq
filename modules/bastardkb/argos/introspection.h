@@ -7,15 +7,21 @@ tap_dance_action_t tap_dance_actions[ARGOS_TAP_DANCE_ENTRIES];
 
 // leave space for a LOT of pointing device codes, 
 // to make mode management easier in the pointing device module
-#define ALO_0 0x7E60 
-// leave space for 10 layers
-#define ALO_1 0x7E61
-#define ALO_2 0x7E62
-#define ALO_3 0x7E63
-#define ALO_4 0x7E64
-#define ALO_5 0x7E65
-#define ALO_6 0x7E66
-#define ALO_7 0x7E67
-#define ALO_8 0x7E68
-#define ALO_9 0x7E69
-#define ALO_LAST 0x7E6A // not used, only for delimitation
+
+// RANGE NOT USED - FOR LO capability
+#define LO_0 0x7E60 // sync with BK_LO
+#define LO_LAST 0x7E6A // not used, only for delimitation
+
+// RANGE NOT USED - FOR LTO capability
+#define LTO_0 0x7E6B // sync with BK_LTO
+#define LTO_LAST 0x7E75 // not used, only for delimitation
+
+// Custom layer keys
+#define BK_LO 0x7E60 // sync with ALO_0
+#define BK_LTO 0x7E6B // sync with ALTO_0
+
+// momentary switch layer, disable all other layers
+#define LO(layer) (BK_LO | ((layer) & 0x09)) // 10 layers max (0-9)
+
+// momentary switch layer on hold, disable all other layers
+#define LTO(layer, kc) (BK_LTO | (((layer) & 0xF) << 8) | ((kc) & 0xFF))

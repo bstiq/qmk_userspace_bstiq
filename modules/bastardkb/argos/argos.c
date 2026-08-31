@@ -424,8 +424,8 @@ bool process_record_argos(uint16_t keycode, keyrecord_t *record) {
     }
 
     // process special layer keycodes
-    if(keycode >= ALO_0 && keycode <= ALO_LAST){
-        uint16_t new_layer_index = keycode - ALO_0;
+    if(keycode >= LO_0 && keycode <= LO_LAST){
+        uint16_t new_layer_index = keycode - LO_0;
         static uint8_t held_layer_index = 0;
         if(record->event.pressed) {
             // save current config
@@ -446,6 +446,10 @@ bool process_record_argos(uint16_t keycode, keyrecord_t *record) {
 
         // TODO release
         return false; // we captured a special layer keycode, no need to process further
+    }
+
+    else if(keycode >= LTO_0 && keycode <= LTO_LAST){
+        
     }
 
     return true;
