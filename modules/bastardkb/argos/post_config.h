@@ -86,11 +86,12 @@
 
 // L-ayer M-od E-xclusive: Momentary switch layer with modifiers active - 16 layer max
 #define BK_LAYER_MOD_EXCLUSIVE 0x7E80
-#define BK_LAYER_MOD_EXCLUSIVE_MAX 0x7F7F
-#define BK_LAYER_MOD_EXCLUSIVE_GET_LAYER(kc) (QK_LAYER_MOD_GET_LAYER(kc))
-#define BK_LAYER_MOD_EXCLUSIVE_GET_MODS(kc) (QK_LAYER_MOD_GET_MODS(kc))
+#define BK_LAYER_MOD_EXCLUSIVE_MAX 0x7FBF
+#define BK_LAYER_MOD_EXCLUSIVE_GET_LAYER(kc)  (((kc) - BK_LAYER_MOD_EXCLUSIVE) >> 5)
+#define BK_LAYER_MOD_EXCLUSIVE_GET_MODS(kc)   ((kc) & 0x1F)
 #define IS_BK_LAYER_MOD_EXCLUSIVE(code) ((code) >= BK_LAYER_MOD_EXCLUSIVE && (code) <= BK_LAYER_MOD_EXCLUSIVE_MAX)
-#define LME(layer, mod) (BK_LAYER_MOD_EXCLUSIVE | (((layer) & 0xF) << 5) | ((mod) & 0x1F))
+// Maximum 10 layers supported
+#define LME(layer, mod) (BK_LAYER_MOD_EXCLUSIVE + (((layer) % 10) << 5) + ((mod) & 0x1F))
 
 // momentary switch layer exclusive when held, key on tap
 // TODO

@@ -32,9 +32,7 @@ action_t bk_action_for_keycode(uint16_t keycode){
         }
         case BK_LAYER_MOD_EXCLUSIVE ... BK_LAYER_MOD_EXCLUSIVE_MAX: {
             mod          = mod_config(BK_LAYER_MOD_EXCLUSIVE_GET_MODS(keycode));
-            printf("mod: %d\n", mod);
             action_layer = BK_LAYER_MOD_EXCLUSIVE_GET_LAYER(keycode);
-            printf("action layer: %d\n", action_layer);
             action.code  = ACTION_LAYER_MODS(action_layer, (mod & 0x10) ? (mod & 0xF) << 4 : mod);
             break;
         }
@@ -50,9 +48,7 @@ bool process_records_argos_exclusive(uint16_t keycode, keyrecord_t *record){
     switch(keycode){
         case BK_MOMENTARY_EXCLUSIVE ... BK_MOMENTARY_EXCLUSIVE_MAX: {
             // TODO actually use action? process_action?
-            printf("momentary layer: %d\n", keycode);
-            uint16_t new_layer_index = keycode - BK_MOMENTARY_EXCLUSIVE;
-            printf("layer index: %d\n", new_layer_index);
+            uint16_t new_layer_index = BK_MOMENTARY_EXCLUSIVE_GET_LAYER(keycode);
             static uint8_t held_layer_index = 0;
             if(record->event.pressed) {
                 // save current config
@@ -74,10 +70,8 @@ bool process_records_argos_exclusive(uint16_t keycode, keyrecord_t *record){
             break;
         }
         case BK_LAYER_MOD_EXCLUSIVE ... BK_LAYER_MOD_EXCLUSIVE_MAX: {
-            printf("layer mod layer: %d\n", keycode);
             // calculate layer index:
             uint16_t new_layer_index = BK_LAYER_MOD_EXCLUSIVE_GET_LAYER(keycode);
-            printf("layer index: %d\n", new_layer_index);
             static uint8_t held_layer_index = 0;
             if(record->event.pressed) {
                 // save current config
