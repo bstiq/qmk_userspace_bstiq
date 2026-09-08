@@ -37,7 +37,6 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
-#include "argos_exclusive.h"
 
 #if BK_HAS_POINTING_DEVICE
 #include "bk_pointing_device.h"
@@ -436,11 +435,6 @@ bool process_record_argos(uint16_t keycode, keyrecord_t *record) {
     bool captured = process_records_argos_capture_all_keycodes(keycode, record);
     if (captured) {
         return false; // we captured a keycode, no need to process further
-    }
-
-    bool processed_exclusive = process_records_argos_exclusive(keycode, record);
-    if (!processed_exclusive) {
-        return false; // we handled an exclusive keycode, no need to process further
     }
 
     return true;
