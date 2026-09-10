@@ -49,6 +49,13 @@ bool rgb_matrix_indicators_advanced_argos(uint8_t led_min, uint8_t led_max) {
         return true;
     }
 #    endif
+
+    // caps locks
+    if (host_keyboard_led_state().caps_lock == true) {
+        rgb_matrix_set_color_all(RGB_RED);
+        return true;
+    }
+
     const uint8_t  layer     = get_highest_layer(layer_state);
     const uint16_t min_index = layer * RGBLIGHT_LED_COUNT;
 
