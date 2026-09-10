@@ -362,8 +362,6 @@ bool is_mouse_record_kb(uint16_t keycode, keyrecord_t *record) {
  */
 void keyboard_post_init_bk_pointing_device(void) {
     read_bkpd_config_from_eeprom();
-    // initialize mode configs
-    bkpd_modes_init();
     // TODO: replace with per-module memory management
 #ifdef COMMUNITY_MODULE_ARGOS_ENABLE
 #else
