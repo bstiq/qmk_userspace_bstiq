@@ -134,11 +134,32 @@ void argos_led_module_set_color(uint16_t index, uint8_t r, uint8_t g, uint8_t b)
     led[2]       = b;
 }
 
+/*
+ * Keyboard brightness uses the same ratio as the per-key matrix,
+ * rgb_matrix_get_val() / RGB_MATRIX_MAXIMUM_BRIGHTNESS. The module's own
+ * control is squared first so it tracks perceived brightness: a linear 20%
+ * (51/255) is still most of a WS2812's light.
+ *
+ * Supply and viewing derate come after that. The per-key LEDs are 3.3 V
+ * behind frosted acrylic or keycaps. This strip is 5 V and viewed directly.
+ * Supply: a WS2812 at 3.3 V draws about half the current it does at 5 V,
+ * and blue/green fall off further, so keep 1/2. Viewing: frosted acrylic
+ * and keycaps pass about a fifth of the light, so keep another 1/5.
+ * At keyboard maximum and module brightness 255, a full-scale channel
+ * lands near 25.
+ */
+#define ARGOS_LED_MODULE_SUPPLY_NUM 1
+#define ARGOS_LED_MODULE_SUPPLY_DEN 2
+#define ARGOS_LED_MODULE_VIEW_NUM   1
+#define ARGOS_LED_MODULE_VIEW_DEN   5
+
 static uint8_t argos_led_module_scale(uint8_t component) {
-    /* Square the control so it tracks perceived brightness. A linear 20%
-     * (51/255) is still most of a WS2812's light. */
-    uint8_t level = ((uint16_t)argos_led_module_brightness * argos_led_module_brightness) / 255;
-    return ((uint16_t)component * level) / 255;
+    uint32_t level = ((uint32_t)argos_led_module_brightness * argos_led_module_brightness) / 255 / 4;
+#    if defined(RGB_MATRIX_ENABLE)
+    level = (level * rgb_matrix_get_val()) / RGB_MATRIX_MAXIMUM_BRIGHTNESS;
+#    endif
+    level = (level * ARGOS_LED_MODULE_SUPPLY_NUM * ARGOS_LED_MODULE_VIEW_NUM) / (ARGOS_LED_MODULE_SUPPLY_DEN * ARGOS_LED_MODULE_VIEW_DEN);
+    return (uint8_t)(((uint32_t)component * level) / 255);
 }
 
 static void argos_led_module_flush(void) {
