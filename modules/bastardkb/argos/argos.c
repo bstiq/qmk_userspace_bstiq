@@ -21,7 +21,6 @@
 #include "argos_combo.h"
 #include "argos_tapdance.h"
 #include "argos_rgb.h"
-#include "argos_led_module.h"
 
 #include "eeconfig.h"
 #include "eeprom.h"
@@ -113,11 +112,6 @@ void keyboard_post_init_argos(void) {
     // for rgb sync, needed for propagating changes
     transaction_register_rpc(RPC_ID_RGB_SYNC, rgb_sync_handler);
 #endif
-    argos_led_module_init();
-}
-
-void housekeeping_task_argos(void) {
-    argos_led_module_task();
 }
 
 bool argos_handle_command(uint8_t *data, uint8_t length) {

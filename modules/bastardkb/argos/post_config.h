@@ -66,23 +66,3 @@
 //    actually re-writes the whole macro space.
 // So instead we define a smaller space manually.
 #define DYNAMIC_KEYMAP_MACRO_EEPROM_SIZE 16 * 512
-
-/*
- * Second WS2812 chain. QMK's driver is limited to 256 LEDs and is already
- * used for the per-key matrix, so this strip is bit-banged on its own pin.
- *
- * Enable by defining ARGOS_LED_MODULE_PIN in the keyboard or keymap config
- * (this file runs after keymap config.h).
- */
-#ifdef ARGOS_LED_MODULE_PIN
-#    ifndef ARGOS_LED_MODULE_ENABLE
-#        define ARGOS_LED_MODULE_ENABLE
-#    endif
-#    ifndef ARGOS_LED_MODULE_LED_COUNT
-#        define ARGOS_LED_MODULE_LED_COUNT 192
-#    endif
-/* A frame holds interrupts for ~6 ms, so it is paced instead of sent every loop. */
-#    ifndef ARGOS_LED_MODULE_REFRESH_MS
-#        define ARGOS_LED_MODULE_REFRESH_MS 100
-#    endif
-#endif

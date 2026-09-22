@@ -42,4 +42,4 @@
  * Second WS2812 chain. QMK's driver is already used for the per-key matrix
  * on GP10, so this strip is bit-banged on its own pin.
  */
-#define ARGOS_LED_MODULE_PIN GP22
+#define LED_MATRIX_MODULE_PIN GP22
