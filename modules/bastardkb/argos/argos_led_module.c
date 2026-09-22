@@ -25,6 +25,7 @@ void argos_led_module_set_color(uint16_t index, uint8_t r, uint8_t g, uint8_t b)
 #else
 
 #    include "hardware/platform_defs.h"
+#    include "argos_rgb.h"
 
 #    if !defined(MCU_RP)
 #        error "Argos LED module bitbang is written for the RP2040"
@@ -45,10 +46,14 @@ void argos_led_module_set_color(uint16_t index, uint8_t r, uint8_t g, uint8_t b)
  *   0-bit high 50 cycles (400 ns), 1-bit high 101 cycles (808 ns)
  *   0-bit low ~108 cycles (864 ns), 1-bit low ~55 cycles (440 ns)
  */
-static uint8_t  argos_led_module_color[ARGOS_LED_MODULE_LED_COUNT * 3];
-static uint8_t  argos_led_module_wire[ARGOS_LED_MODULE_LED_COUNT * 3];
-static uint8_t  argos_led_module_brightness = 255;
-static uint32_t argos_led_module_rng        = 0xA5A5u;
+static uint8_t argos_led_module_color[ARGOS_LED_MODULE_LED_COUNT * 3];
+static uint8_t argos_led_module_wire[ARGOS_LED_MODULE_LED_COUNT * 3];
+static uint8_t argos_led_module_brightness = 255;
+
+/* Physical grid. Index 0 is the bottom-right LED: even rows (from the bottom)
+ * run right to left, odd rows run left to right. */
+#define ARGOS_LED_MODULE_COLS 12
+#define ARGOS_LED_MODULE_ROWS 16
 
 /*
  * r0 = pin mask, r1 = byte count, r2 = GRB bytes.
@@ -152,17 +157,69 @@ static void argos_led_module_flush(void) {
     wait_us(280); /* latch / reset */
 }
 
-static uint8_t argos_led_module_random8(void) {
-    argos_led_module_rng ^= argos_led_module_rng << 13;
-    argos_led_module_rng ^= argos_led_module_rng >> 17;
-    argos_led_module_rng ^= argos_led_module_rng << 5;
-    return (uint8_t)argos_led_module_rng;
+/* x = 0 is the left column, y = 0 is the bottom row. */
+static uint16_t argos_led_module_index(uint8_t x, uint8_t y) {
+    if ((y & 1) == 0) {
+        return (uint16_t)y * ARGOS_LED_MODULE_COLS + (ARGOS_LED_MODULE_COLS - 1 - x);
+    }
+    return (uint16_t)y * ARGOS_LED_MODULE_COLS + x;
 }
 
-static void argos_led_module_test_random(void) {
-    argos_led_module_set_brightness((255 * 20) / 100);
+/* 5x7 glyphs. Bit 4 is the left pixel, row 0 is the top. Drawn at 2x, centered. */
+static const uint8_t argos_led_module_digit[10][7] = {
+    {0x0E, 0x11, 0x11, 0x11, 0x11, 0x11, 0x0E}, /* 0 */
+    {0x04, 0x0C, 0x04, 0x04, 0x04, 0x04, 0x0E}, /* 1 */
+    {0x0E, 0x11, 0x01, 0x02, 0x04, 0x08, 0x1F}, /* 2 */
+    {0x0E, 0x11, 0x01, 0x06, 0x01, 0x11, 0x0E}, /* 3 */
+    {0x02, 0x06, 0x0A, 0x12, 0x1F, 0x02, 0x02}, /* 4 */
+    {0x1F, 0x10, 0x1E, 0x01, 0x01, 0x11, 0x0E}, /* 5 */
+    {0x06, 0x08, 0x10, 0x1E, 0x11, 0x11, 0x0E}, /* 6 */
+    {0x1F, 0x01, 0x02, 0x04, 0x08, 0x08, 0x08}, /* 7 */
+    {0x0E, 0x11, 0x11, 0x0E, 0x11, 0x11, 0x0E}, /* 8 */
+    {0x0E, 0x11, 0x11, 0x0F, 0x01, 0x02, 0x0C}, /* 9 */
+};
+
+static void argos_led_module_show_layer(void) {
     for (uint16_t i = 0; i < ARGOS_LED_MODULE_LED_COUNT; i++) {
-        argos_led_module_set_color(i, argos_led_module_random8(), argos_led_module_random8(), argos_led_module_random8());
+        argos_led_module_set_color(i, 0, 0, 0);
+    }
+
+    uint8_t layer = get_highest_layer(layer_state);
+    if (layer > 9) {
+        layer = 9;
+    }
+
+    RGB rgb = {0, 0, 0};
+#    if defined(RGBLIGHT_ENABLE) || defined(RGB_MATRIX_ENABLE)
+    argos_rgb_get_layer_color(layer, &rgb);
+#    endif
+    /* Layer 0 is stored as off, which would draw an invisible digit. */
+    if (rgb.r == 0 && rgb.g == 0 && rgb.b == 0) {
+        rgb.r = 255;
+        rgb.g = 255;
+        rgb.b = 255;
+    }
+
+    const uint8_t scale    = 2;
+    const uint8_t glyph_w  = 5;
+    const uint8_t glyph_h  = 7;
+    const uint8_t origin_x = (ARGOS_LED_MODULE_COLS - glyph_w * scale) / 2;
+    const uint8_t origin_y = (ARGOS_LED_MODULE_ROWS - glyph_h * scale) / 2;
+
+    for (uint8_t row = 0; row < glyph_h; row++) {
+        uint8_t bits = argos_led_module_digit[layer][row];
+        for (uint8_t col = 0; col < glyph_w; col++) {
+            if ((bits & (1u << (4 - col))) == 0) {
+                continue;
+            }
+            for (uint8_t sy = 0; sy < scale; sy++) {
+                for (uint8_t sx = 0; sx < scale; sx++) {
+                    uint8_t x = origin_x + col * scale + sx;
+                    uint8_t y = origin_y + (glyph_h - 1 - row) * scale + sy;
+                    argos_led_module_set_color(argos_led_module_index(x, y), rgb.r, rgb.g, rgb.b);
+                }
+            }
+        }
     }
 }
 
@@ -170,7 +227,6 @@ void argos_led_module_init(void) {
     gpio_set_pin_output(ARGOS_LED_MODULE_PIN);
     gpio_write_pin_low(ARGOS_LED_MODULE_PIN);
     wait_us(280); /* reset the strip before the first frame */
-    argos_led_module_rng ^= timer_read32() | 1u;
 }
 
 void argos_led_module_task(void) {
@@ -178,7 +234,7 @@ void argos_led_module_task(void) {
 
     if (timer_elapsed32(last_update) >= ARGOS_LED_MODULE_REFRESH_MS) {
         last_update = timer_read32();
-        argos_led_module_test_random();
+        argos_led_module_show_layer();
         argos_led_module_flush();
     }
 }
