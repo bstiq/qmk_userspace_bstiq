@@ -107,6 +107,7 @@ _Static_assert(sizeof(argos_td_entry_t) <= 11, "Invalid size for argos_td_entry_
 __attribute__((weak)) void argos_read_eeprom(uint16_t offset, void *buf, uint16_t size);
 __attribute__((weak)) void argos_write_eeprom(uint16_t offset, const void *buf, uint16_t size);
 void                       keyboard_post_init_argos(void);
+void                       housekeeping_task_argos(void);
 bool                       argos_handle_command(uint8_t *data, uint8_t length);
 void                       argos_raw_hid_send_captured_key(void);
 void                       argos_keycode_down(uint16_t keycode);
