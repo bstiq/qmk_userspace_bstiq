@@ -191,41 +191,79 @@ static RGB led_matrix_module_layer_color(void) {
 }
 
 /*
- * Layer 0 logo: 12x16, row 0 is the top, bit 11 is the left pixel.
- * Black source pixels are on (white LEDs); white source pixels stay off.
+ * Typing-speed gauge, drawn in the three leftmost columns. The bottom row is
+ * 0 WPM and green, the top row is 140 WPM and red, and the rows between take
+ * the mix of those two. The bar fills upward to the current speed.
+ *
+ * A word is five keystrokes. Speed is how many of those fit in the last
+ * three seconds, so the bar drops back to the green row once typing stops.
+ * Modifier keys are ignored.
  */
-static const uint16_t led_matrix_module_logo[LED_MATRIX_MODULE_ROWS] = {
-    0x0FFF, /* ############ */
-    0x0F9F, /* #####..##### */
-    0x0E07, /* ###......### */
-    0x0E93, /* ###.#..#..## */
-    0x0A95, /* #.#.#..#.#.# */
-    0x0A95, /* #.#.#..#.#.# */
-    0x0BD9, /* #.####.##..# */
-    0x0A51, /* #.#..#.#...# */
-    0x0A59, /* #.#..#.##..# */
-    0x0A55, /* #.#..#.#.#.# */
-    0x0BCB, /* #.####..#.## */
-    0x0C07, /* ##.......### */
-    0x0C03, /* ##........## */
-    0x0E07, /* ###......### */
-    0x0F9F, /* #####..##### */
-    0x0FFF, /* ############ */
-};
+#define LED_MATRIX_MODULE_WPM_MAX       140
+#define LED_MATRIX_MODULE_WPM_WINDOW_MS 3000
+#define LED_MATRIX_MODULE_WPM_SAMPLES   64
+#define LED_MATRIX_MODULE_WPM_COLS      3
 
-static void led_matrix_module_show_logo(void) {
-    for (uint16_t i = 0; i < LED_MATRIX_MODULE_LED_COUNT; i++) {
-        led_matrix_module_set_color(i, 0, 0, 0);
+static uint32_t led_matrix_module_wpm_time[LED_MATRIX_MODULE_WPM_SAMPLES];
+static uint8_t  led_matrix_module_wpm_head  = 0;
+static uint8_t  led_matrix_module_wpm_count = 0;
+static bool     led_matrix_module_wpm_dirty = false;
+
+static void led_matrix_module_wpm_press(uint16_t keycode) {
+    if (IS_MODIFIER_KEYCODE(keycode)) {
+        return;
+    }
+    led_matrix_module_wpm_time[led_matrix_module_wpm_head] = timer_read32();
+    led_matrix_module_wpm_head                             = (led_matrix_module_wpm_head + 1) % LED_MATRIX_MODULE_WPM_SAMPLES;
+    if (led_matrix_module_wpm_count < LED_MATRIX_MODULE_WPM_SAMPLES) {
+        led_matrix_module_wpm_count++;
+    }
+    led_matrix_module_wpm_dirty = true;
+}
+
+/* keys/5 words over a window of WINDOW_MS, in minutes. */
+static uint16_t led_matrix_module_wpm(void) {
+    uint16_t keys = 0;
+    for (uint8_t n = 0; n < led_matrix_module_wpm_count; n++) {
+        uint8_t i = (led_matrix_module_wpm_head + LED_MATRIX_MODULE_WPM_SAMPLES - 1 - n) % LED_MATRIX_MODULE_WPM_SAMPLES;
+        if (timer_elapsed32(led_matrix_module_wpm_time[i]) >= LED_MATRIX_MODULE_WPM_WINDOW_MS) {
+            break;
+        }
+        keys++;
+    }
+    return (uint16_t)((uint32_t)keys * 12000u / LED_MATRIX_MODULE_WPM_WINDOW_MS);
+}
+
+static void led_matrix_module_render_gauge(void) {
+    uint16_t wpm = led_matrix_module_wpm();
+    if (wpm > LED_MATRIX_MODULE_WPM_MAX) {
+        wpm = LED_MATRIX_MODULE_WPM_MAX;
     }
 
+    const uint8_t  span = LED_MATRIX_MODULE_ROWS - 1;
+    const uint16_t pos  = wpm * span;
+
     for (uint8_t row = 0; row < LED_MATRIX_MODULE_ROWS; row++) {
-        uint16_t bits = led_matrix_module_logo[row];
-        for (uint8_t col = 0; col < LED_MATRIX_MODULE_COLS; col++) {
-            if ((bits & (1u << (LED_MATRIX_MODULE_COLS - 1 - col))) == 0) {
-                continue;
+        uint16_t mark       = (uint16_t)row * LED_MATRIX_MODULE_WPM_MAX;
+        uint8_t  brightness = 0;
+        if (row == 0 || pos >= mark) {
+            brightness = 255;
+        } else {
+            uint16_t prev = (uint16_t)(row - 1) * LED_MATRIX_MODULE_WPM_MAX;
+            if (pos > prev) {
+                brightness = (uint8_t)((uint32_t)(pos - prev) * 255 / (mark - prev));
             }
-            uint8_t y = (uint8_t)(LED_MATRIX_MODULE_ROWS - 1 - row);
-            led_matrix_module_set_color(led_matrix_module_index(col, y), 255, 255, 255);
+        }
+
+        uint8_t blend = (uint8_t)((uint16_t)row * 255 / span);
+        uint8_t r     = (uint8_t)((uint16_t)blend * brightness / 255);
+        uint8_t g     = (uint8_t)((uint16_t)(255 - blend) * brightness / 255);
+        for (uint8_t col = 0; col < LED_MATRIX_MODULE_COLS; col++) {
+            if (col < LED_MATRIX_MODULE_WPM_COLS) {
+                led_matrix_module_set_color(led_matrix_module_index(col, row), r, g, 0);
+            } else {
+                led_matrix_module_set_color(led_matrix_module_index(col, row), 0, 0, 0);
+            }
         }
     }
 }
@@ -247,7 +285,7 @@ static const uint8_t led_matrix_module_digit[10][7] = {
 static void led_matrix_module_show_layer(void) {
     uint8_t layer = get_highest_layer(layer_state);
     if (layer == 0) {
-        led_matrix_module_show_logo();
+        led_matrix_module_render_gauge();
         return;
     }
 
@@ -482,14 +520,22 @@ void keyboard_post_init_led_matrix(void) {
     wait_us(280); /* reset the strip before the first frame */
 }
 
+bool process_record_led_matrix(uint16_t keycode, keyrecord_t *record) {
+    if (record->event.pressed) {
+        led_matrix_module_wpm_press(keycode);
+    }
+    return true;
+}
+
 void housekeeping_task_led_matrix(void) {
     static uint32_t last_update = 0;
 
     bool mods_changed = led_matrix_module_sync_mods();
-    if (!mods_changed && timer_elapsed32(last_update) < LED_MATRIX_MODULE_REFRESH_MS) {
+    if (!mods_changed && !led_matrix_module_wpm_dirty && timer_elapsed32(last_update) < LED_MATRIX_MODULE_REFRESH_MS) {
         return;
     }
-    last_update = timer_read32();
+    led_matrix_module_wpm_dirty = false;
+    last_update                  = timer_read32();
     if (led_matrix_mod_stack_len > 0) {
         led_matrix_module_render_mods();
     } else if (led_matrix_module_text_set) {
