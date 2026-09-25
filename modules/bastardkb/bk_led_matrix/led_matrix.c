@@ -3,7 +3,7 @@
 
 #include QMK_KEYBOARD_H
 
-#include "led_matrix_module.h"
+#include "led_matrix.h"
 #include "led_matrix_layers.h"
 #include "led_matrix_pointer.h"
 

@@ -30,6 +30,20 @@ static const led_matrix_icon_t *const bklm_icon_by_mode[] = {
 /* One well for Custom 1–5. Rebuilt each time: the digit is the mode. */
 static led_matrix_icon_t bklm_icon_custom;
 
+
+/**
+ * \brief TODO / process mouse movements to change what's displayed based on current active mode
+ */
+ report_mouse_t pointing_device_task_bk_led_matrix(report_mouse_t mouse_report) {
+//     if (is_keyboard_master()) {
+// #ifndef POINTING_DEVICE_DRIVER_digitizer
+//         mouse_report = bkpd_process_active_mode(mouse_report);
+//         mouse_report = pointing_device_task_user(mouse_report);
+// #endif
+//     }
+    return mouse_report;
+}
+
 /* Stacks the shared C on a 0-based digit (slot 0 → "1"). Never returns NULL. */
 static const led_matrix_icon_t *bklm_icon_compose_custom(uint8_t slot) {
     memset(&bklm_icon_custom, 0, sizeof(bklm_icon_custom));
