@@ -1,1 +1,1 @@
-SRC += bk_led_matrix_pointer.c
+SRC += led_matrix_pointer.c
