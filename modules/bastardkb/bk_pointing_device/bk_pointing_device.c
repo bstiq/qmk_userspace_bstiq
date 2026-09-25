@@ -49,6 +49,7 @@ ASSERT_COMMUNITY_MODULES_MIN_API_VERSION(1, 0, 0);
 
 bkpd_config_t g_bkpd_config                  = {0};
 int8_t changing_dpi_settings_for_mode = -1;
+static bool mode_toggled_by_user = false;
 
 /**
  * \brief Set the value of `config` from EEPROM.
@@ -279,11 +280,13 @@ bool process_record_bk_pointing_device(uint16_t keycode, keyrecord_t *record) {
                 printf("bkpd_mode_set_active: MODE_NORMAL\n");
                 bkpd_mode_release(mode);
             }
+            mode_toggled_by_user = false;
         } 
         // toggle keycode
         else {
             if(record->event.pressed) {
                 bkpd_mode_toggle_active(mode);
+                mode_toggled_by_user = true;
             }
         }
         return true;
@@ -384,7 +387,11 @@ void keyboard_post_init_bk_pointing_device(void) {
 }
 
 /**
- * \brief Switch to a specific mode on layer if that option is enabled.
+ * \brief Activate a pointing mode associated with the new layer, if any.
+ *
+ * If the highest layer has a mode configured to auto-trigger, switch to that
+ * mode. Otherwise keep the current mode so a toggled mode survives layer
+ * changes.
  */
 layer_state_t layer_state_set_bk_pointing_device(layer_state_t state) {
     if (layer_state_cmp(state, AUTO_MOUSE_DEFAULT_LAYER) && \
@@ -395,15 +402,24 @@ layer_state_t layer_state_set_bk_pointing_device(layer_state_t state) {
         if(g_bkpd_config.auto_precision_on_mouse_layer_enabled){
             bkpd_mode_release(MODE_SNIPING);
         }
-        // test if any of the custom modes are activated on this layer
-        for(int i = 0; i < MODE_LAST; i++) {
-            if(layer_state_cmp(state, g_bkpd_config.modes_config[i].activate_on_layer)) {
-                bkpd_mode_set_active(i);
-                return state;
+        // if the new layer has an associated mode, switch to it
+        uint8_t highest_layer = get_highest_layer(state);
+        if (highest_layer != 0) {
+            for(int i = 0; i < MODE_LAST; i++) {
+                if(g_bkpd_config.modes_config[i].activate_on_layer == highest_layer) {
+                    bkpd_mode_set_active(i);
+                    mode_toggled_by_user = false;
+                    return state;
+                }
+            }
+        } else{
+            // base layer: 
+            // - deactivate mode if it was automatically triggered on layer change
+            // - keep mode active if it was toggled
+            if(!mode_toggled_by_user) {
+                bkpd_mode_set_active(MODE_NORMAL);
             }
         }
-        // default option
-        bkpd_mode_set_active(MODE_NORMAL);
     }
     return state;
 }
