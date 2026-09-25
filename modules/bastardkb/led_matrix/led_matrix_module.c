@@ -4,15 +4,17 @@
 #include QMK_KEYBOARD_H
 
 #include "led_matrix_module.h"
+#include "led_matrix_pointer.h"
 
 ASSERT_COMMUNITY_MODULES_MIN_API_VERSION(1, 0, 0);
 
-/* Prepares the matrix pin before the first frame. */
+/* Reset the strip so the first painted frame starts from a known-off pin. */
 void keyboard_post_init_led_matrix(void) {
     bklm_init();
 }
 
-/* Sends a solid red frame at LED_MATRIX_MODULE_REFRESH_MS. */
+/* The sender holds interrupts for ~6 ms, so frames are paced.
+ * Clear first: the gutter and unused well must stay dark. */
 void housekeeping_task_led_matrix(void) {
     static uint32_t last_update = 0;
     static RGB      frame[LED_MATRIX_MODULE_LED_COUNT];
@@ -22,10 +24,7 @@ void housekeeping_task_led_matrix(void) {
     }
     last_update = timer_read32();
 
-    for (uint16_t i = 0; i < LED_MATRIX_MODULE_LED_COUNT; i++) {
-        frame[i].r = 255;
-        frame[i].g = 0;
-        frame[i].b = 0;
-    }
+    memset(frame, 0, sizeof(frame));
+    bklm_pointer_paint(frame);
     bklm_show(frame);
 }

@@ -29,11 +29,6 @@ ASSERT_COMMUNITY_MODULES_MIN_API_VERSION(1, 0, 0);
 static uint8_t bklm_wire[LED_MATRIX_MODULE_LED_COUNT * 3];
 static uint8_t bklm_brightness = 255;
 
-/* Physical grid. Index 0 is the bottom-right LED: even rows (from the bottom)
- * run right to left, odd rows run left to right. */
-#define BKLM_COLS 12
-#define BKLM_ROWS 16
-
 _Static_assert(LED_MATRIX_MODULE_LED_COUNT == BKLM_COLS * BKLM_ROWS, "LED matrix geometry does not match LED_MATRIX_MODULE_LED_COUNT");
 
 /*
@@ -136,7 +131,8 @@ static uint8_t bklm_scale(uint8_t component) {
     return (uint8_t)(((uint32_t)component * level) / 255);
 }
 
-/* Maps visual (x, y) to the serpentine LED index. x = 0 is the left column, y = 0 is the bottom row. */
+/* Visual (x, y) → wire order. Index 0 is bottom-right: even rows (from the
+ * bottom) run right to left, odd rows run left to right. */
 static uint16_t bklm_index(uint8_t x, uint8_t y) {
     if ((y & 1) == 0) {
         return (uint16_t)y * BKLM_COLS + (BKLM_COLS - 1 - x);

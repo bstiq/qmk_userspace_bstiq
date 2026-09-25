@@ -5,6 +5,10 @@
 
 #include "quantum.h"
 
+/* Visual grid. Same size as the physical strip; y = 0 is the bottom row. */
+#define BKLM_COLS 12
+#define BKLM_ROWS 16
+
 /* Paints one visual framebuffer and returns after the strip latches.
  * pixels has LED_MATRIX_MODULE_LED_COUNT entries, row-major, x = 0 at the
  * left and y = 0 at the bottom. No-op when pixels is NULL. */
