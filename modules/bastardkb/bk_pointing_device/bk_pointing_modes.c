@@ -20,6 +20,10 @@
 #include "bk_pointing_device.h"
 #include "math.h"
 
+#ifdef COMMUNITY_MODULE_BK_LED_MATRIX_ENABLE
+#include "bk_led_matrix.h"
+#endif
+
 #define BK_POINTING_DEVICE_DRAGSCROLL_BUFFER_SIZE 30
 // #ifdef POINTING_DEVICE_DRIVER_digitizer
 // #define BK_POINTING_DEVICE_CURSOR_BUFFER_SIZE_X 250
@@ -49,13 +53,6 @@
 
 #define BK_POINTING_DEVICE_DPI_STEPS 30
 #define BK_POINTING_DEVICE_SNIPING_DPI_STEPS 20
-
-// for led matrix
-#ifdef COMMUNITY_MODULE_BK_LED_MATRIX_ENABLE
-static int16_t mouse_movement_x = 0;
-static int16_t mouse_movement_y = 0;
-#endif
-    
 
 extern bkpd_config_t g_bkpd_config;
 extern int8_t changing_dpi_settings_for_mode;
@@ -262,11 +259,8 @@ void bkpd_mode_toggle_active(uint8_t mode_id) {
 }
 
 report_mouse_t bkpd_process_active_mode(report_mouse_t mouse_report) {
-    // for led matrix
 #ifdef COMMUNITY_MODULE_BK_LED_MATRIX_ENABLE
-    mouse_movement_x = mouse_report.x;
-    mouse_movement_y = mouse_report.y;
-    printf("led matrix module is enabled, saving mouse movement: x=%d, y=%d\n", mouse_movement_x, mouse_movement_y);
+        bk_led_matrix_record_mouse_movement(mouse_report);        
 #endif
     // invert x/y if needed, regardless of following processing
     if (bkpd_mode_get_invert(active_mode->id, 0)) {
@@ -279,15 +273,6 @@ report_mouse_t bkpd_process_active_mode(report_mouse_t mouse_report) {
         return active_mode->process(mouse_report);
     }
     return mouse_report;
-}
-
-// used by the led matrix module
-void bkpd_get_mouse_movement(int16_t *x, int16_t *y){
-#ifdef COMMUNITY_MODULE_BK_LED_MATRIX_ENABLE
-    *x = mouse_movement_x;
-    *y = mouse_movement_y;
-    printf("mouse movement: x=%d, y=%d\n", *x, *y);
-#endif
 }
 
 // used for RGB indicators
