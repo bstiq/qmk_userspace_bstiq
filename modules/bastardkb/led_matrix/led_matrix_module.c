@@ -4,7 +4,6 @@
 #include QMK_KEYBOARD_H
 
 #include "led_matrix_module.h"
-#include "led_matrix_pointer.h"
 
 ASSERT_COMMUNITY_MODULES_MIN_API_VERSION(1, 0, 0);
 
@@ -528,28 +527,6 @@ bool process_record_led_matrix(uint16_t keycode, keyrecord_t *record) {
     return true;
 }
 
-/* Clear the matrix and blit `icon` into the centered well. Icon row 0 is the
- * visual top; led_matrix_module_index uses y=0 as the bottom row, so y is flipped. */
-static void led_matrix_module_draw_icon(const led_matrix_icon_t *icon) {
-    const uint8_t origin_x = (LED_MATRIX_MODULE_COLS - LED_MATRIX_ICON_W) / 2;
-    const uint8_t origin_y = (LED_MATRIX_MODULE_ROWS - LED_MATRIX_ICON_H) / 2;
-
-    for (uint16_t i = 0; i < LED_MATRIX_MODULE_LED_COUNT; i++) {
-        led_matrix_module_set_color(i, 0, 0, 0);
-    }
-
-    for (uint8_t row = 0; row < LED_MATRIX_ICON_H; row++) {
-        for (uint8_t col = 0; col < LED_MATRIX_ICON_W; col++) {
-            /* pixel[] is a PIX_* index; palette turns it into LED RGB. */
-            led_matrix_icon_rgb_t rgb = led_matrix_icon_palette[icon->pixel[row][col]];
-            uint8_t               x   = origin_x + col;
-            uint8_t               y   = (LED_MATRIX_MODULE_ROWS - 1) - (origin_y + row);
-            led_matrix_module_set_color(led_matrix_module_index(x, y), rgb.r, rgb.g, rgb.b);
-        }
-    }
-}
-
-/* Pointer-mode logo wins, then held mods, then pushed text, then layer / WPM. */
 void housekeeping_task_led_matrix(void) {
     static uint32_t last_update = 0;
 
@@ -558,12 +535,8 @@ void housekeeping_task_led_matrix(void) {
         return;
     }
     led_matrix_module_wpm_dirty = false;
-    last_update                 = timer_read32();
-
-    const led_matrix_icon_t *pointer_icon = led_matrix_pointer_active_icon();
-    if (pointer_icon != NULL) {
-        led_matrix_module_draw_icon(pointer_icon);
-    } else if (led_matrix_mod_stack_len > 0) {
+    last_update                  = timer_read32();
+    if (led_matrix_mod_stack_len > 0) {
         led_matrix_module_render_mods();
     } else if (led_matrix_module_text_set) {
         led_matrix_module_render_text(led_matrix_module_text, led_matrix_module_text_len, 255, 255, 255);
