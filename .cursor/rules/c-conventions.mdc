@@ -1,0 +1,47 @@
+---
+description: C conventions from this userspace — comments, KISS/DRY, split data/logic/display
+globs: "**/*.{c,h}"
+alwaysApply: false
+---
+
+# C conventions
+
+## Comments
+
+- Put a short comment above every function saying what it does and when it returns NULL / no-op.
+- Comment non-obvious values: coordinate flips, reserved gutters, compile-time include guards, index offsets.
+- Do not narrate the next line. Name the invariant.
+
+```c
+/* Icon row 0 is visual top; index() uses y=0 as the bottom LED. */
+uint8_t y = (ROWS - 1) - (origin_y + row);
+```
+
+## KISS
+
+- Ship the behavior asked for. Do not add caches, change-detection, or animation hooks “for later” unless they are required now.
+- Prefer a table indexed by id over a long switch.
+- Derive layout from sizes: `(COLS - ICON_W) / 2`, not a magic `2`.
+- Do not bounds-check data this file owns (const bitmaps, enum tokens).
+
+```c
+/* ❌ BAD — cache + ready flags so pointers differ */
+/* ✅ GOOD — one buffer, compose when that mode is active */
+```
+
+## DRY
+
+- One function, `#if` inside, not two copies of the same symbol.
+- Reuse existing module APIs (`bkpd_mode_get_active_id()`) instead of mirroring state.
+- Keep pixel data in one translation unit. If a header is included from two `.c` files, do not put `static const` bitmaps in that header without a define guard — they will be duplicated in flash.
+
+## Split
+
+- Data structures and bitmaps: header (or one data `.c`).
+- Logic: pick what to show (mode → icon).
+- Display: blit / flush only.
+
+## Style
+
+- Match existing headers (copyright, SPDX, QMK include order).
+- `static` unless another file needs the symbol.
