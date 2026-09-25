@@ -3,11 +3,4 @@
 
 #pragma once
 
-#include <stdint.h>
-
-void keyboard_post_init_led_matrix(void);
-void housekeeping_task_led_matrix(void);
-void led_matrix_module_set_brightness(uint8_t brightness);
-void led_matrix_module_set_color(uint16_t index, uint8_t r, uint8_t g, uint8_t b);
-/* Clear the matrix and draw up to 9 characters. A-Z and 0-9 are shown; other bytes stay blank. */
-void led_matrix_module_show_text(const char *text);
+#include "led_matrix_display.h"
