@@ -6,6 +6,11 @@ alwaysApply: false
 
 # C conventions
 
+## Git
+
+- Do not create git commits. Do not run `git commit`, `git commit --amend`, or otherwise record a commit.
+- The user handles all commits.
+
 ## Comments
 
 - Put a short comment above every function saying what it does and when it returns NULL / no-op.
