@@ -41,7 +41,7 @@ static const led_matrix_icon_t *bklm_icon_compose_custom(uint8_t slot) {
 
 /* Table for named modes; custom is letter+digit, not five full wells.
  * NULL means "no picture" — Normal, or a mode this file does not know. */
-static const led_matrix_icon_t *bklm_pointer_icon(uint8_t mode) {
+static const led_matrix_icon_t *bklm_pointer_resolve_icon(uint8_t mode) {
     if (mode >= MODE_CUSTOM1 && mode <= MODE_CUSTOM5) {
         return bklm_icon_compose_custom((uint8_t)(mode - MODE_CUSTOM1));
     }
@@ -73,16 +73,19 @@ static void bklm_draw_icon(RGB *pixels, const led_matrix_icon_t *icon) {
 #endif
 
 /* Active pointing pictogram, centered in the well.
- * No-op when pixels is NULL, pointing is not built in, or the mode has no picture. */
-void bklm_pointer_paint(RGB *pixels) {
+ * Returns false when pixels is NULL, pointing is not built in, or the mode has no picture. */
+bool bklm_pointer_paint(RGB *pixels) {
     if (pixels == NULL) {
-        return;
+        return false;
     }
 #ifdef COMMUNITY_MODULE_BK_POINTING_DEVICE_ENABLE
-    const led_matrix_icon_t *icon = bklm_pointer_icon(bkpd_mode_get_active_id());
+    const led_matrix_icon_t *icon = bklm_pointer_resolve_icon(bkpd_mode_get_active_id());
     if (icon == NULL) {
-        return;
+        return false;
     }
     bklm_draw_icon(pixels, icon);
+    return true;
+#else
+    return false;
 #endif
 }

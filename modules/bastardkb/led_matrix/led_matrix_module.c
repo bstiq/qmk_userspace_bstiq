@@ -4,6 +4,7 @@
 #include QMK_KEYBOARD_H
 
 #include "led_matrix_module.h"
+#include "led_matrix_layers.h"
 #include "led_matrix_pointer.h"
 
 ASSERT_COMMUNITY_MODULES_MIN_API_VERSION(1, 0, 0);
@@ -25,6 +26,8 @@ void housekeeping_task_led_matrix(void) {
     last_update = timer_read32();
 
     memset(frame, 0, sizeof(frame));
-    bklm_pointer_paint(frame);
+    if (!bklm_pointer_paint(frame)) {
+        bklm_layers_paint(frame);
+    }
     bklm_show(frame);
 }

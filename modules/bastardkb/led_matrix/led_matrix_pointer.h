@@ -6,5 +6,5 @@
 #include "quantum.h"
 
 /* Active pointing pictogram, centered in the well.
- * No-op when pixels is NULL, pointing is not built in, or the mode has no picture. */
-void bklm_pointer_paint(RGB *pixels);
+ * Returns false when pixels is NULL, pointing is not built in, or the mode has no picture. */
+bool bklm_pointer_paint(RGB *pixels);
