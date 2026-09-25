@@ -3,13 +3,15 @@
 
 #include QMK_KEYBOARD_H
 
-#include "bk_led_matrix.h"
+#include "led_matrix_module.h"
 #include "led_matrix_pointer.h"
 
 ASSERT_COMMUNITY_MODULES_MIN_API_VERSION(1, 0, 0);
 
 #include "hardware/platform_defs.h"
-#include "argos_rgb.h"
+#if __has_include("argos_rgb.h")
+#    include "argos_rgb.h"
+#endif
 
 #if !defined(MCU_RP)
 #    error "LED matrix module bitbang is written for the RP2040"
@@ -513,13 +515,13 @@ void led_matrix_module_show_text(const char *text) {
     led_matrix_module_flush();
 }
 
-void keyboard_post_init_bk_led_matrix(void) {
+void keyboard_post_init_led_matrix(void) {
     gpio_set_pin_output(LED_MATRIX_MODULE_PIN);
     gpio_write_pin_low(LED_MATRIX_MODULE_PIN);
     wait_us(280); /* reset the strip before the first frame */
 }
 
-bool process_record_bk_led_matrix(uint16_t keycode, keyrecord_t *record) {
+bool process_record_led_matrix(uint16_t keycode, keyrecord_t *record) {
     if (record->event.pressed) {
         led_matrix_module_wpm_press(keycode);
     }
@@ -547,42 +549,8 @@ static void led_matrix_module_draw_icon(const led_matrix_icon_t *icon) {
     }
 }
 
-/* Paint the 2 px gutter white. Gutter is (matrix - icon) / 2 on each axis. */
-void led_matrix_module_fill_band(uint8_t dir) {
-    if (dir == LED_MATRIX_DIR_NONE) {
-        return;
-    }
-
-    const uint8_t gutter_x = (LED_MATRIX_MODULE_COLS - LED_MATRIX_ICON_W) / 2;
-    const uint8_t gutter_y = (LED_MATRIX_MODULE_ROWS - LED_MATRIX_ICON_H) / 2;
-
-    for (uint8_t y = 0; y < LED_MATRIX_MODULE_ROWS; y++) {
-        for (uint8_t x = 0; x < LED_MATRIX_MODULE_COLS; x++) {
-            bool on = false;
-            switch (dir) {
-                case LED_MATRIX_DIR_LEFT:
-                    on = x < gutter_x;
-                    break;
-                case LED_MATRIX_DIR_RIGHT:
-                    on = x >= (uint8_t)(LED_MATRIX_MODULE_COLS - gutter_x);
-                    break;
-                case LED_MATRIX_DIR_DOWN:
-                    on = y < gutter_y;
-                    break;
-                case LED_MATRIX_DIR_UP:
-                    on = y >= (uint8_t)(LED_MATRIX_MODULE_ROWS - gutter_y);
-                    break;
-            }
-            if (on) {
-                led_matrix_module_set_color(led_matrix_module_index(x, y), 255, 255, 255);
-            }
-        }
-    }
-}
-
-/* Pointer-mode logo wins, then held mods, then pushed text, then layer / WPM.
- * Overlay is painted last so the band sits on top of the current frame. */
-void housekeeping_task_bk_led_matrix(void) {
+/* Pointer-mode logo wins, then held mods, then pushed text, then layer / WPM. */
+void housekeeping_task_led_matrix(void) {
     static uint32_t last_update = 0;
 
     bool mods_changed = led_matrix_module_sync_mods();
@@ -602,8 +570,6 @@ void housekeeping_task_bk_led_matrix(void) {
     } else {
         led_matrix_module_show_layer();
     }
-    /* 100 ms refresh already covers the 200 ms linger and the clean expiry frame. */
-    led_matrix_pointer_apply_overlay();
     led_matrix_module_flush();
 }
 
