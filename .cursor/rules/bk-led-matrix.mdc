@@ -40,11 +40,14 @@ void bklm_send_frame_to_strip(const RGB *pixels);
 Clear the framebuffer, then draw in this order (later wins):
 
 1. `bklm_draw_pointer_mode_icon`
-2. `bklm_draw_active_modifier_icons`
-3. `bklm_draw_active_layer_digit`
-4. `bklm_send_frame_to_strip`
+2. `bklm_draw_bobbing_duck`
+3. `bklm_draw_active_modifier_icons`
+4. `bklm_draw_active_layer_digit`
+5. `bklm_send_frame_to_strip`
 
 The layer digit stays readable over the caps tile. On layers 1–9, modifier icons use `bklm_get_active_layer_and_color` so they match the digit. On layer 0, each icon keeps its own palette color.
+
+The duck is a backdrop, not an icon: it paints only on layer 0 with no modifier held, so everything drawn after it has a clear well.
 
 ## Glyphs
 

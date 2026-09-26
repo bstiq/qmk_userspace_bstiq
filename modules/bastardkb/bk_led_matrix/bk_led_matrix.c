@@ -4,6 +4,7 @@
 #include QMK_KEYBOARD_H
 
 #include "led_matrix.h"
+#include "led_matrix_duck.h"
 #include "led_matrix_layers.h"
 #include "led_matrix_mods.h"
 #include "led_matrix_pointer.h"
@@ -17,8 +18,9 @@ void keyboard_post_init_bk_led_matrix(void) {
 
 /* The sender holds interrupts for ~6 ms, so frames are paced.
  * Clear first: the gutter and unused well must stay dark.
- * Pointer mode owns the well; otherwise mods then the layer digit so
- * the number stays readable if a tile ever overlaps it. */
+ * Pointer mode owns the well; otherwise the duck is the backdrop, then mods,
+ * then the layer digit so the number stays readable if a tile ever overlaps
+ * it. The duck draws itself only on layer 0 with no modifier held. */
 void housekeeping_task_bk_led_matrix(void) {
     static uint32_t last_update = 0;
     static RGB      frame[LED_MATRIX_MODULE_LED_COUNT];
@@ -30,6 +32,7 @@ void housekeeping_task_bk_led_matrix(void) {
 
     memset(frame, 0, sizeof(frame));
     if (!bklm_pointer_paint(frame)) {
+        bklm_draw_bobbing_duck(frame);
         bklm_draw_active_modifier_icons(frame);
         bklm_layers_paint(frame);
     }
