@@ -3,3 +3,4 @@ SRC += led_matrix_pointer.c
 SRC += led_matrix_layers.c
 SRC += led_matrix_mods.c
 SRC += led_matrix_duck.c
+SRC += led_matrix_flag.c

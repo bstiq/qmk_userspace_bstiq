@@ -76,14 +76,11 @@ static RGB *bklm_duck_pixel_at(RGB *pixels, uint8_t x, uint8_t row) {
 }
 
 /* Duck floating on a strip of water, bobbing one row every BKLM_DUCK_BOB_MS.
- * Layer 0 only, and only while no modifier is held: the layer digit and the
- * modifier tiles share this well, and the scene is just clutter behind them.
+ * The scene is the resting state, so it paints unconditionally: the composer
+ * calls it only once every indicator has declined the frame.
  * No-op when pixels is NULL. */
 void bklm_draw_bobbing_duck(RGB *pixels) {
     if (pixels == NULL) {
-        return;
-    }
-    if (get_highest_layer(layer_state) != 0 || get_mods() != 0) {
         return;
     }
 

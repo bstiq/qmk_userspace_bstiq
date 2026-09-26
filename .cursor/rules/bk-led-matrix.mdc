@@ -19,7 +19,7 @@ void bklm_paint(RGB *pixels);
 void bklm_show(const RGB *pixels);
 
 // GOOD
-void bklm_draw_active_layer_digit(RGB *pixels);
+void bklm_draw_active_modifier_icons(RGB *pixels);
 void bklm_send_frame_to_strip(const RGB *pixels);
 ```
 
@@ -37,18 +37,28 @@ void bklm_send_frame_to_strip(const RGB *pixels);
 
 ## Frame composition
 
-Clear the framebuffer, then draw in this order (later wins):
+Clear the framebuffer, then offer it to the indicators in this order. Each one
+returns `true` when it has painted, and the rest are skipped:
 
-1. `bklm_draw_pointer_mode_icon`
-2. `bklm_draw_bobbing_duck`
-3. `bklm_draw_active_modifier_icons`
-4. `bklm_draw_active_layer_digit`
-5. `bklm_send_frame_to_strip`
+1. `bklm_pointer_paint`
+2. `bklm_draw_active_modifier_icons`
+3. `bklm_draw_layer_stack`
+4. `bklm_draw_bobbing_duck` (always paints; no return value)
 
-The layer digit stays readable over the caps tile. On layers 1–9, modifier icons use `bklm_get_active_layer_and_color` so they match the digit. On layer 0, each icon keeps its own palette color.
+Then `bklm_send_frame_to_strip`.
 
-The duck is a backdrop, not an icon: it paints only on layer 0 with no modifier held, so everything drawn after it has a clear well.
+Indicators are mutually exclusive, not layered: a pointer mode, a held modifier
+and the layer stack each fill the panel, so stacking them only cuts holes. Add a
+new indicator by giving it a `bool` painter and a place in that order, not by
+teaching an existing one to make room.
+
+Decide who owns the frame in the composer, not inside a painter: a painter
+returns `false` only for input it cannot draw (NULL framebuffer, layer 0 for the
+stack), never to defer to another indicator.
+
+The duck is the resting state rather than an indicator, so it is last and paints
+unconditionally.
 
 ## Glyphs
 
-Bit `(width - 1)` is the left pixel. Row 0 is the top of the picture. Framebuffer `y = 0` is the bottom LED — flip when drawing. Keep per-row `.###.` comments so bitmaps stay readable.
+Bit `(width - 1)` is the left pixel. Row 0 is the top of the picture. Framebuffer `y = 0` is the bottom LED — flip when drawing. Keep per-row `.###.` comments so bitmaps stay readable, or use `'#'`/`'.'` char art when a bitmap is large enough that packed bits stop being legible (see the duck sprite and the 3×5 font).

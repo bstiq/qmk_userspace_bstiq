@@ -18,15 +18,11 @@ enum {
 };
 
 /*
- * 5×7 tiles packed beside the 4×6 layer digit so the number stays fully
- * visible. Origin x=5 leaves a one-column gutter after the digit.
+ * Three 5×7 tiles: two stacked in the right column, the third below them on
+ * the left. Two rows of two tiles would need 14 rows and a gutter, which does
+ * not fit 12×16, so a fourth held modifier is not drawn.
  *
- * A 5×7 tile is one row taller than the digit, so the first icon hangs
- * one row below it. Two tiles fit in that column; a third wraps under
- * the digit. Four 5×7 tiles plus the digit cannot pack into 12×16
- * without overlap, so a fourth active mod is not drawn.
- *
- * Glyphs: bit 4 is the left pixel, row 0 is the top (same as the digits).
+ * Glyphs: bit 4 is the left pixel, row 0 is the top.
  * Colors match led_matrix_icon_palette (white / cyan / orange / yellow).
  */
 static const struct {
@@ -115,12 +111,13 @@ static void bklm_mods_draw_glyph(RGB *pixels, const uint8_t *glyph, uint8_t orig
     }
 }
 
-/* Active GUI / Alt / Ctrl / Shift tiles beside the layer digit.
- * Left and right keys of the same modifier share one icon. No-op when
- * pixels is NULL or no matching modifier is held. */
-void bklm_draw_active_modifier_icons(RGB *pixels) {
+/* Active GUI / Alt / Ctrl / Shift tiles. Left and right keys of the same
+ * modifier share one icon. Returns false without painting when pixels is NULL
+ * or no matching modifier is held, which is how the composer knows to fall
+ * through to the layer stack. */
+bool bklm_draw_active_modifier_icons(RGB *pixels) {
     if (pixels == NULL) {
-        return;
+        return false;
     }
 
     const uint8_t mods = get_mods();
@@ -136,4 +133,6 @@ void bklm_draw_active_modifier_icons(RGB *pixels) {
         bklm_mods_draw_glyph(pixels, bklm_mod[i].glyph, bklm_mod_slot[slot].x, bklm_mod_slot[slot].y, bklm_mod[i].color);
         slot++;
     }
+
+    return slot > 0;
 }

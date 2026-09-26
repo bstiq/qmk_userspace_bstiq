@@ -5,4 +5,4 @@
 
 #include "quantum.h"
 
-void bklm_layers_paint(RGB *pixels);
+bool bklm_draw_layer_stack(RGB *pixels);

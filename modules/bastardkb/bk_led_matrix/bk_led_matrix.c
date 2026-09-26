@@ -5,6 +5,7 @@
 
 #include "led_matrix.h"
 #include "led_matrix_duck.h"
+#include "led_matrix_flag.h"
 #include "led_matrix_layers.h"
 #include "led_matrix_mods.h"
 #include "led_matrix_pointer.h"
@@ -17,10 +18,16 @@ void keyboard_post_init_bk_led_matrix(void) {
 }
 
 /* The sender holds interrupts for ~6 ms, so frames are paced.
- * Clear first: the gutter and unused well must stay dark.
- * Pointer mode owns the well; otherwise the duck is the backdrop, then mods,
- * then the layer digit so the number stays readable if a tile ever overlaps
- * it. The duck draws itself only on layer 0 with no modifier held. */
+ * Clear first: any cell no indicator claims must stay dark.
+ *
+ * The indicators are mutually exclusive, most urgent first: each returns false
+ * when it has nothing to say and the next one gets the frame. A pointer mode,
+ * a held modifier and the layer stack each fill the panel on their own, so
+ * layering them would only cut holes in one another. The backdrop is last
+ * because it is the resting state, not an indicator.
+ *
+ * bklm_draw_bobbing_duck is the other backdrop and still builds: swap the one
+ * call below to go back to it. */
 void housekeeping_task_bk_led_matrix(void) {
     static uint32_t last_update = 0;
     static RGB      frame[LED_MATRIX_MODULE_LED_COUNT];
@@ -31,10 +38,8 @@ void housekeeping_task_bk_led_matrix(void) {
     last_update = timer_read32();
 
     memset(frame, 0, sizeof(frame));
-    if (!bklm_pointer_paint(frame)) {
-        bklm_draw_bobbing_duck(frame);
-        bklm_draw_active_modifier_icons(frame);
-        bklm_layers_paint(frame);
+    if (!bklm_pointer_paint(frame) && !bklm_draw_active_modifier_icons(frame) && !bklm_draw_layer_stack(frame)) {
+        bklm_draw_hammer_and_sickle(frame);
     }
     bklm_show(frame);
 }
