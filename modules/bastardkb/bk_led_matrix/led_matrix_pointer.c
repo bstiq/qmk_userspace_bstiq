@@ -88,7 +88,7 @@ static void bklm_draw_centered_pointer_icon(RGB *pixels, const led_matrix_icon_t
 
 /* Active pointing pictogram, centered in the well.
  * Returns false when pixels is NULL, pointing is not built in, or the mode has no picture. */
-bool bklm_draw_pointer_mode_icon(RGB *pixels) {
+bool bklm_pointer_paint(RGB *pixels) {
     if (pixels == NULL) {
         return false;
     }

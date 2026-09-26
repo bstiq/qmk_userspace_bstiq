@@ -10,6 +10,6 @@
 #define BKLM_ROWS 16
 
 void bklm_draw_bitmap_glyph(RGB *pixels, const uint8_t *rows, uint8_t width, uint8_t height, uint8_t origin_x, uint8_t origin_y_top, RGB color);
-void bklm_send_frame_to_strip(const RGB *pixels);
-void bklm_set_strip_brightness(uint8_t brightness);
-void bklm_reset_strip(void);
+void bklm_show(const RGB *pixels);
+void bklm_set_brightness(uint8_t brightness);
+void bklm_init(void);

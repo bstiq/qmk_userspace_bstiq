@@ -5,4 +5,4 @@
 
 #include "quantum.h"
 
-bool bklm_draw_pointer_mode_icon(RGB *pixels);
+bool bklm_pointer_paint(RGB *pixels);

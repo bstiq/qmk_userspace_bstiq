@@ -53,7 +53,7 @@ uint8_t bklm_get_active_layer_and_color(RGB *color) {
 
 /* Layer digit in the top-left 4×6 well when the active layer is 1–9.
  * No-op when pixels is NULL or the highest layer is 0. */
-void bklm_draw_active_layer_digit(RGB *pixels) {
+void bklm_layers_paint(RGB *pixels) {
     if (pixels == NULL) {
         return;
     }
