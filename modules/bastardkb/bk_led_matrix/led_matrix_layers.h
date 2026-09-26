@@ -6,3 +6,5 @@
 #include "quantum.h"
 
 bool bklm_draw_layer_stack(RGB *pixels);
+
+RGB bklm_get_active_layer_color(void);

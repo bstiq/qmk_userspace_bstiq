@@ -7,7 +7,7 @@
 #include "led_matrix_duck.h"
 
 #define BKLM_DUCK_W 11
-#define BKLM_DUCK_H 13
+#define BKLM_DUCK_H 12
 
 /* Water never moves. The hull is painted over it, so the duck reads as sitting
  * in the water rather than on top of it.
@@ -40,7 +40,7 @@ static const RGB bklm_duck_water   = {62, 207, 255};  /* #3ecfff */
 
 /*
  * Char art instead of the PIX_ tables in led_matrix_data.h: those spell one
- * token per cell, which is unreadable at 11x13, and including that header
+ * token per cell, which is unreadable at 11x12, and including that header
  * would copy every pointer icon into flash a second time. Here the bitmap is
  * its own comment, so there is nothing to keep in sync.
  *

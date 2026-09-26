@@ -84,14 +84,42 @@ static const char bklm_font_upper[26][BKLM_GLYPH_H][BKLM_GLYPH_W + 1] = {
     {"###", "..#", ".#.", "#..", "###"}, /* Z */
 };
 
+/* Only ever shown after an "L", so 0 sharing its shape with O and 5 with S
+ * costs nothing: the position says which one it is. */
+static const char bklm_font_digit[10][BKLM_GLYPH_H][BKLM_GLYPH_W + 1] = {
+    {"###", "#.#", "#.#", "#.#", "###"}, /* 0 */
+    {".#.", "##.", ".#.", ".#.", "###"}, /* 1 */
+    {"###", "..#", "###", "#..", "###"}, /* 2 */
+    {"###", "..#", "###", "..#", "###"}, /* 3 */
+    {"#.#", "#.#", "###", "..#", "..#"}, /* 4 */
+    {"###", "#..", "###", "..#", "###"}, /* 5 */
+    {"###", "#..", "###", "#.#", "###"}, /* 6 */
+    {"###", "..#", ".#.", ".#.", ".#."}, /* 7 */
+    {"###", "#.#", "###", "#.#", "###"}, /* 8 */
+    {"###", "#.#", "###", "..#", "..#"}, /* 9 */
+};
+
+typedef const char (*bklm_glyph_t)[BKLM_GLYPH_W + 1];
+
+/* NULL for anything the font does not carry, which is how a blank column in a
+ * name draws as nothing rather than as a wrong letter. */
+static bklm_glyph_t bklm_font_glyph(char c) {
+    if (c >= 'A' && c <= 'Z') {
+        return bklm_font_upper[c - 'A'];
+    }
+    if (c >= '0' && c <= '9') {
+        return bklm_font_digit[c - '0'];
+    }
+    return NULL;
+}
+
 /*
  * TODO: these are the Dilemma 4x6 layers. The 3x5 keymaps use a different enum
  * (base, function, navigation, media, pointer, numeral, symbols, lcd) and need
  * their own table once the module can tell the two boards apart.
  *
- * A layer the board does not define gets an empty name: its bar still draws,
- * and if it somehow became active the block would show its two lines with no
- * text rather than a wrong word.
+ * Leave a layer this board does not define empty rather than inventing a word
+ * for it: bklm_layer_name_of falls back to "L" and the number.
  */
 static const char bklm_layer_name[BKLM_LAYER_SLOTS][BKLM_LAYER_NAME_LEN + 1] = {
     "BSE", /* LAYER_BASE */
@@ -103,6 +131,22 @@ static const char bklm_layer_name[BKLM_LAYER_SLOTS][BKLM_LAYER_NAME_LEN + 1] = {
     "",
     "",
 };
+
+/* "L" and the layer number for a layer the table does not name, so an
+ * unexpected layer still identifies itself. The blank between them is a column
+ * the font has no glyph for, which draws as nothing.
+ *
+ * The buffer is static because the caller only reads it before the next call,
+ * and layer is already clamped below BKLM_LAYER_SLOTS, so the digit is one. */
+static const char *bklm_layer_name_of(uint8_t layer) {
+    static char numbered[BKLM_LAYER_NAME_LEN + 1] = "L 0";
+
+    if (bklm_layer_name[layer][0] != '\0') {
+        return bklm_layer_name[layer];
+    }
+    numbered[2] = (char)('0' + layer);
+    return numbered;
+}
 
 /* Layer 0 is white by definition. The others come from argos, which also
  * falls back to white when it has no color stored for the layer. */
@@ -119,6 +163,12 @@ static RGB bklm_layer_color(uint8_t layer) {
     }
 #endif
     return color;
+}
+
+/* The color this file paints the active layer with, for indicators that take
+ * the panel from the layer stack and still have to say which layer is on. */
+RGB bklm_get_active_layer_color(void) {
+    return bklm_layer_color(get_highest_layer(layer_state));
 }
 
 static RGB bklm_layer_dim(RGB color) {
@@ -142,11 +192,10 @@ static void bklm_layers_fill_row(RGB *pixels, uint8_t row, uint8_t width, RGB co
  * spare column stays dark on the right. top_row is the visual top of the text. */
 static void bklm_layers_draw_name(RGB *pixels, uint8_t top_row, const char *name, RGB color) {
     for (uint8_t i = 0; i < BKLM_LAYER_NAME_LEN; i++) {
-        /* Also skips the terminator of a layer this board does not name. */
-        if (name[i] < 'A' || name[i] > 'Z') {
+        const bklm_glyph_t glyph = bklm_font_glyph(name[i]);
+        if (glyph == NULL) {
             continue;
         }
-        const char(*glyph)[BKLM_GLYPH_W + 1] = bklm_font_upper[name[i] - 'A'];
 
         for (uint8_t row = 0; row < BKLM_GLYPH_H; row++) {
             for (uint8_t col = 0; col < BKLM_GLYPH_W; col++) {
@@ -193,7 +242,7 @@ bool bklm_draw_layer_stack(RGB *pixels) {
         }
 
         bklm_layers_fill_row(pixels, row, BKLM_COLS, color);
-        bklm_layers_draw_name(pixels, row + BKLM_LAYER_BLOCK_NAME_ROW, bklm_layer_name[layer], color);
+        bklm_layers_draw_name(pixels, row + BKLM_LAYER_BLOCK_NAME_ROW, bklm_layer_name_of((uint8_t)layer), color);
         bklm_layers_fill_row(pixels, row + BKLM_LAYER_BLOCK_H - 1, BKLM_COLS, color);
         row += BKLM_LAYER_BLOCK_H;
     }

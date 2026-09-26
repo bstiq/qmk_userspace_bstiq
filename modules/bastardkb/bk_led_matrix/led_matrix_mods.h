@@ -5,4 +5,4 @@
 
 #include "quantum.h"
 
-bool bklm_draw_active_modifier_icons(RGB *pixels);
+bool bklm_draw_active_modifier_names(RGB *pixels);

@@ -19,7 +19,7 @@ void bklm_paint(RGB *pixels);
 void bklm_show(const RGB *pixels);
 
 // GOOD
-void bklm_draw_active_modifier_icons(RGB *pixels);
+void bklm_draw_active_modifier_names(RGB *pixels);
 void bklm_send_frame_to_strip(const RGB *pixels);
 ```
 
@@ -41,7 +41,7 @@ Clear the framebuffer, then offer it to the indicators in this order. Each one
 returns `true` when it has painted, and the rest are skipped:
 
 1. `bklm_pointer_paint`
-2. `bklm_draw_active_modifier_icons`
+2. `bklm_draw_active_modifier_names`
 3. `bklm_draw_layer_stack`
 4. `bklm_draw_bobbing_duck` (always paints; no return value)
 
@@ -51,6 +51,10 @@ Indicators are mutually exclusive, not layered: a pointer mode, a held modifier
 and the layer stack each fill the panel, so stacking them only cuts holes. Add a
 new indicator by giving it a `bool` painter and a place in that order, not by
 teaching an existing one to make room.
+
+An indicator that takes the panel from the layer stack paints in the active
+layer's color (`bklm_get_active_layer_color`), so the frame still says which
+layer is on. Modifier names do this.
 
 Decide who owns the frame in the composer, not inside a painter: a painter
 returns `false` only for input it cannot draw (NULL framebuffer, layer 0 for the
