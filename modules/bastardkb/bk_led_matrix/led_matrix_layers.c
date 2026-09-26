@@ -27,7 +27,7 @@ static const uint8_t bklm_layer_digit[9][BKLM_LAYER_DIGIT_H] = {
 };
 
 /* Top-left 4×6 well. Glyph row 0 is visual top; y = 0 is the bottom LED row. */
-static void bklm_layers_blit(RGB *pixels, uint8_t layer, RGB color) {
+static void bklm_layers_blit(RGB *pixels, uint8_t layer, RGB color, uint8_t x_origin) {
     const uint8_t *glyph = bklm_layer_digit[layer - 1];
 
     for (uint8_t row = 0; row < BKLM_LAYER_DIGIT_H; row++) {
@@ -36,7 +36,7 @@ static void bklm_layers_blit(RGB *pixels, uint8_t layer, RGB color) {
             if ((bits & (1u << (BKLM_LAYER_DIGIT_W - 1 - col))) == 0) {
                 continue;
             }
-            uint8_t x   = col;
+            uint8_t x   = x_origin + col;
             uint8_t y   = (BKLM_ROWS - 1) - row;
             RGB    *dst = &pixels[(uint16_t)y * BKLM_COLS + x];
             dst->r      = color.r;
@@ -71,5 +71,12 @@ void bklm_layers_paint(RGB *pixels) {
     }
 #endif
 
-    bklm_layers_blit(pixels, layer, color);
+    uint8_t x_origin = 0;
+#ifdef COMMUNITY_MODULE_ARGOS_ENABLE
+    if (layer >= 1) {
+        x_origin = 1;
+    }
+#endif
+
+    bklm_layers_blit(pixels, layer, color, x_origin);
 }
