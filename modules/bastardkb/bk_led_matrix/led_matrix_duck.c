@@ -17,10 +17,14 @@
  * which uncovers another row of water under the hull. */
 #define BKLM_DUCK_TOP_ROW 2
 
+/* An 11-wide sprite in a 12-wide panel cannot be centered. The spare column
+ * goes on the left, behind the beak, rather than behind the tail. */
+#define BKLM_DUCK_LEFT_COL 1
+
 /* How long the duck holds each of its two positions. */
 #define BKLM_DUCK_BOB_MS 2000
 
-_Static_assert(BKLM_DUCK_W <= BKLM_COLS, "duck sprite is wider than the panel");
+_Static_assert(BKLM_DUCK_LEFT_COL + BKLM_DUCK_W <= BKLM_COLS, "duck sprite runs off the right of the panel");
 _Static_assert(BKLM_DUCK_TOP_ROW + BKLM_DUCK_H <= BKLM_ROWS, "duck sprite hangs off the bottom of the panel");
 
 /* Same values as led_matrix_icon_palette, kept local so this file does not
@@ -88,8 +92,7 @@ void bklm_draw_bobbing_duck(RGB *pixels) {
 
     /* Two positions straight off the millisecond clock, so there is no frame
      * counter to carry. The phase jumps once per timer wrap (~49 days). */
-    const uint8_t top      = BKLM_DUCK_TOP_ROW - (uint8_t)((timer_read32() / BKLM_DUCK_BOB_MS) & 1);
-    const uint8_t origin_x = (BKLM_COLS - BKLM_DUCK_W) / 2;
+    const uint8_t top = BKLM_DUCK_TOP_ROW - (uint8_t)((timer_read32() / BKLM_DUCK_BOB_MS) & 1);
 
     for (uint8_t row = 0; row < BKLM_DUCK_H; row++) {
         for (uint8_t col = 0; col < BKLM_DUCK_W; col++) {
@@ -107,7 +110,7 @@ void bklm_draw_bobbing_duck(RGB *pixels) {
                 default:
                     continue; /* transparent: keep the water or the dark well */
             }
-            *bklm_duck_pixel_at(pixels, origin_x + col, top + row) = *color;
+            *bklm_duck_pixel_at(pixels, BKLM_DUCK_LEFT_COL + col, top + row) = *color;
         }
     }
 }
