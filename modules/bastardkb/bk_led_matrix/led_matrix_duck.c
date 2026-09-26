@@ -10,7 +10,11 @@
 #define BKLM_DUCK_H 13
 
 /* Water never moves. The hull is painted over it, so the duck reads as sitting
- * in the water rather than on top of it. */
+ * in the water rather than on top of it.
+ *
+ * The surface has to reach the row where the body flares out. Any shallower
+ * and the hull's curve pulls away from a flat waterline, leaving a wedge of
+ * dark cells between the two. */
 #define BKLM_DUCK_WATER_ROWS 3
 
 /* Top row of the sprite when the duck rides low. Bobbing lifts it by one,
@@ -62,8 +66,7 @@ static const char bklm_duck_sprite[BKLM_DUCK_H][BKLM_DUCK_W + 1] = {
     "..#OOOO####",
     ".#OOOOOOOO#",
     "#OOOOOOOOO#",
-    "#OOOOOOOO#.",
-    ".########..",
+    ".OOOOOOOO..",
 };
 
 /* Row 0 is the top of the picture; framebuffer y = 0 is the bottom LED. */
