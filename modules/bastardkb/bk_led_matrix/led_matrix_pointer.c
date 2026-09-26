@@ -45,7 +45,7 @@ static led_matrix_icon_t bklm_icon_custom;
 }
 
 /* Stacks the shared C on a 0-based digit (slot 0 → "1"). Never returns NULL. */
-static const led_matrix_icon_t *bklm_icon_compose_custom(uint8_t slot) {
+static const led_matrix_icon_t *bklm_compose_custom_mode_icon(uint8_t slot) {
     memset(&bklm_icon_custom, 0, sizeof(bklm_icon_custom));
     memcpy(bklm_icon_custom.pixel, led_matrix_icon_custom_letter, sizeof(led_matrix_icon_custom_letter));
     /* Blank row between C and digit so they read as two glyphs. */
@@ -55,9 +55,9 @@ static const led_matrix_icon_t *bklm_icon_compose_custom(uint8_t slot) {
 
 /* Table for named modes; custom is letter+digit, not five full wells.
  * NULL means "no picture" — Normal, or a mode this file does not know. */
-static const led_matrix_icon_t *bklm_pointer_resolve_icon(uint8_t mode) {
+static const led_matrix_icon_t *bklm_icon_for_pointer_mode(uint8_t mode) {
     if (mode >= MODE_CUSTOM1 && mode <= MODE_CUSTOM5) {
-        return bklm_icon_compose_custom((uint8_t)(mode - MODE_CUSTOM1));
+        return bklm_compose_custom_mode_icon((uint8_t)(mode - MODE_CUSTOM1));
     }
     /* mode comes from the pointing module, not from this table. */
     if (mode < ARRAY_SIZE(bklm_icon_by_mode)) {
@@ -68,7 +68,7 @@ static const led_matrix_icon_t *bklm_pointer_resolve_icon(uint8_t mode) {
 
 /* Places the well in the centered gutter. Caller passes a real icon.
  * Lives here so the palette is not copied into a second .c. */
-static void bklm_draw_icon(RGB *pixels, const led_matrix_icon_t *icon) {
+static void bklm_draw_centered_pointer_icon(RGB *pixels, const led_matrix_icon_t *icon) {
     const uint8_t origin_x = (BKLM_COLS - LED_MATRIX_ICON_W) / 2;
     const uint8_t origin_y = (BKLM_ROWS - LED_MATRIX_ICON_H) / 2;
 
@@ -88,16 +88,16 @@ static void bklm_draw_icon(RGB *pixels, const led_matrix_icon_t *icon) {
 
 /* Active pointing pictogram, centered in the well.
  * Returns false when pixels is NULL, pointing is not built in, or the mode has no picture. */
-bool bklm_pointer_paint(RGB *pixels) {
+bool bklm_draw_pointer_mode_icon(RGB *pixels) {
     if (pixels == NULL) {
         return false;
     }
 #ifdef COMMUNITY_MODULE_BK_POINTING_DEVICE_ENABLE
-    const led_matrix_icon_t *icon = bklm_pointer_resolve_icon(bkpd_mode_get_active_id());
+    const led_matrix_icon_t *icon = bklm_icon_for_pointer_mode(bkpd_mode_get_active_id());
     if (icon == NULL) {
         return false;
     }
-    bklm_draw_icon(pixels, icon);
+    bklm_draw_centered_pointer_icon(pixels, icon);
     return true;
 #else
     return false;

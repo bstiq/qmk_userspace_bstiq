@@ -1,0 +1,51 @@
+---
+description: Conventions for the BastardKB 12×16 LED matrix module
+globs: modules/bastardkb/bk_led_matrix/**
+alwaysApply: false
+---
+
+# LED matrix (`bk_led_matrix`)
+
+12×16 RGB well. Firmware state only — no host communication.
+
+## Names
+
+- Files: `led_matrix_xxx.{c,h}`
+- Functions: `bklm_` + a verb phrase you can understand without opening the body
+
+```c
+// BAD
+void bklm_paint(RGB *pixels);
+void bklm_show(const RGB *pixels);
+
+// GOOD
+void bklm_draw_active_layer_digit(RGB *pixels);
+void bklm_send_frame_to_strip(const RGB *pixels);
+```
+
+## Comments
+
+- Say what, why, and how. Put that on the implementation in the `.c`.
+- Headers are declarations only. Do not document functions in `.h` files.
+- `#define` notes for grid constants may stay in the header.
+
+## KISS / DRY
+
+- Do not add a function unless it is used in more than one place or hides a real invariant (e.g. the y-flip).
+- One table for one concept. Do not keep parallel arrays for the same tiles.
+- After a change, do a second pass: delete, rename, or comment anything that is still vague.
+
+## Frame composition
+
+Clear the framebuffer, then draw in this order (later wins):
+
+1. `bklm_draw_pointer_mode_icon`
+2. `bklm_draw_active_modifier_icons`
+3. `bklm_draw_active_layer_digit`
+4. `bklm_send_frame_to_strip`
+
+The layer digit stays readable over the caps tile. On layers 1–9, modifier icons use `bklm_get_active_layer_and_color` so they match the digit. On layer 0, each icon keeps its own palette color.
+
+## Glyphs
+
+Bit `(width - 1)` is the left pixel. Row 0 is the top of the picture. Framebuffer `y = 0` is the bottom LED — flip when drawing. Keep per-row `.###.` comments so bitmaps stay readable.

@@ -5,4 +5,5 @@
 
 #include "quantum.h"
 
-void bklm_layers_paint(RGB *pixels);
+uint8_t bklm_get_active_layer_and_color(RGB *color);
+void bklm_draw_active_layer_digit(RGB *pixels);

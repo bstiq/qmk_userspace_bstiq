@@ -5,4 +5,4 @@
 
 #include "quantum.h"
 
-bool bklm_draw_pointer_mode_icon(RGB *pixels);
+void bklm_draw_active_modifier_icons(RGB *pixels);
