@@ -17,7 +17,7 @@ ASSERT_COMMUNITY_MODULES_MIN_API_VERSION(1, 0, 0);
 /*
  * Bit-banged WS2812 on LED_MATRIX_MODULE_PIN.
  *
- * bklm_show receives full-scale RGB in visual order. Brightness is applied
+ * bklm_send_frame_to_strip receives full-scale RGB in visual order. Brightness is applied
  * while copying into bklm_wire as GRB, which is what the LEDs expect.
  * The sender runs from SRAM and holds interrupts off for the frame (~6 ms).
  *
@@ -36,8 +36,7 @@ _Static_assert(LED_MATRIX_MODULE_LED_COUNT == BKLM_COLS * BKLM_ROWS, "LED matrix
  * The pointer is an asm input so the scaled buffer cannot be optimized away.
  */
 /* Bit-bangs one GRB frame. The caller disables interrupts for the duration. */
-/* Bit-bangs one GRB frame. The caller disables interrupts for the duration. */
-static void __attribute__((noinline, noipa, section(".time_critical.bklm_send"))) bklm_send(uint32_t pin_mask, uint32_t byte_count, const uint8_t *data) {
+static void __attribute__((noinline, noipa, section(".time_critical.bklm_bitbang_grb_bytes"))) bklm_bitbang_grb_bytes(uint32_t pin_mask, uint32_t byte_count, const uint8_t *data) {
     register uint32_t      mask asm("r0")  = pin_mask;
     register uint32_t      count asm("r1") = byte_count;
     register const uint8_t *ptr asm("r2")  = data;
@@ -98,8 +97,8 @@ static void __attribute__((noinline, noipa, section(".time_critical.bklm_send"))
         : "r3", "r4", "r5", "r6", "r7", "cc", "memory");
 }
 
-/* Stores the module brightness applied on the next bklm_show. 0 is off, 255 is full. */
-void bklm_set_brightness(uint8_t brightness) {
+/* Stores the module brightness applied on the next send. 0 is off, 255 is full. */
+void bklm_set_strip_brightness(uint8_t brightness) {
     bklm_brightness = brightness;
 }
 
@@ -145,7 +144,7 @@ void bklm_draw_bitmap_glyph(RGB *pixels, const uint8_t *rows, uint8_t width, uin
 #define BKLM_VIEW_DEN   5
 
 /* Scales one full-range channel down to the wire level. */
-static uint8_t bklm_scale(uint8_t component) {
+static uint8_t bklm_scale_channel_to_wire(uint8_t component) {
     uint32_t level = ((uint32_t)bklm_brightness * bklm_brightness) / 255 / 4;
 #    if defined(RGB_MATRIX_ENABLE)
     level = (level * rgb_matrix_get_val()) / RGB_MATRIX_MAXIMUM_BRIGHTNESS;
@@ -156,7 +155,7 @@ static uint8_t bklm_scale(uint8_t component) {
 
 /* Visual (x, y) → wire order. Index 0 is bottom-right: even rows (from the
  * bottom) run right to left, odd rows run left to right. */
-static uint16_t bklm_index(uint8_t x, uint8_t y) {
+static uint16_t bklm_visual_to_wire_index(uint8_t x, uint8_t y) {
     if ((y & 1) == 0) {
         return (uint16_t)y * BKLM_COLS + (BKLM_COLS - 1 - x);
     }
@@ -166,7 +165,7 @@ static uint16_t bklm_index(uint8_t x, uint8_t y) {
 /* Paints one visual framebuffer and returns after the strip latches.
  * pixels has LED_MATRIX_MODULE_LED_COUNT entries, row-major, x = 0 at the
  * left and y = 0 at the bottom. No-op when pixels is NULL. */
-void bklm_show(const RGB *pixels) {
+void bklm_send_frame_to_strip(const RGB *pixels) {
     if (pixels == NULL) {
         return;
     }
@@ -174,22 +173,22 @@ void bklm_show(const RGB *pixels) {
     for (uint8_t y = 0; y < BKLM_ROWS; y++) {
         for (uint8_t x = 0; x < BKLM_COLS; x++) {
             const RGB *src = &pixels[(uint16_t)y * BKLM_COLS + x];
-            uint8_t   *dst = &bklm_wire[bklm_index(x, y) * 3];
-            dst[0]         = bklm_scale(src->g);
-            dst[1]         = bklm_scale(src->r);
-            dst[2]         = bklm_scale(src->b);
+            uint8_t   *dst = &bklm_wire[bklm_visual_to_wire_index(x, y) * 3];
+            dst[0]         = bklm_scale_channel_to_wire(src->g);
+            dst[1]         = bklm_scale_channel_to_wire(src->r);
+            dst[2]         = bklm_scale_channel_to_wire(src->b);
         }
     }
 
     __asm__ volatile("" ::: "memory");
     __asm__ volatile("cpsid i" ::: "memory");
-    bklm_send(1u << LED_MATRIX_MODULE_PIN, LED_MATRIX_MODULE_LED_COUNT * 3, bklm_wire);
+    bklm_bitbang_grb_bytes(1u << LED_MATRIX_MODULE_PIN, LED_MATRIX_MODULE_LED_COUNT * 3, bklm_wire);
     __asm__ volatile("cpsie i" ::: "memory");
     wait_us(280); /* latch / reset */
 }
 
 /* Drives the data pin low long enough for the strip to reset. */
-void bklm_init(void) {
+void bklm_reset_strip(void) {
     gpio_set_pin_output(LED_MATRIX_MODULE_PIN);
     gpio_write_pin_low(LED_MATRIX_MODULE_PIN);
     wait_us(280);
