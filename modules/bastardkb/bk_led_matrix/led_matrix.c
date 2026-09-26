@@ -5,14 +5,13 @@
 
 #include "led_matrix.h"
 #include "led_matrix_layers.h"
-#include "led_matrix_mods.h"
 #include "led_matrix_pointer.h"
 
 ASSERT_COMMUNITY_MODULES_MIN_API_VERSION(1, 0, 0);
 
 /* Reset the strip so the first painted frame starts from a known-off pin. */
 void keyboard_post_init_led_matrix(void) {
-    bklm_reset_strip();
+    bklm_init();
 }
 
 /* The sender holds interrupts for ~6 ms, so frames are paced.
@@ -26,11 +25,9 @@ void housekeeping_task_led_matrix(void) {
     }
     last_update = timer_read32();
 
-    /* Pointer, then mods, then the layer digit. Later draws win, so
-     * the number stays readable over the caps tile in the top-left. */
     memset(frame, 0, sizeof(frame));
-    bklm_draw_pointer_mode_icon(frame);
-    bklm_draw_active_modifier_icons(frame);
-    bklm_draw_active_layer_digit(frame);
-    bklm_send_frame_to_strip(frame);
+    if (!bklm_pointer_paint(frame)) {
+        bklm_layers_paint(frame);
+    }
+    bklm_show(frame);
 }

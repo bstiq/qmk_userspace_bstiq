@@ -5,4 +5,6 @@
 
 #include "quantum.h"
 
-bool bklm_draw_pointer_mode_icon(RGB *pixels);
+/* Active pointing pictogram, centered in the well.
+ * Returns false when pixels is NULL, pointing is not built in, or the mode has no picture. */
+bool bklm_pointer_paint(RGB *pixels);
