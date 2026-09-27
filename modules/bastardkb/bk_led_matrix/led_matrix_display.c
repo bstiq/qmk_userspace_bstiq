@@ -96,7 +96,7 @@ static void __attribute__((noinline, noipa, section(".time_critical.bklm_send"))
         : "r3", "r4", "r5", "r6", "r7", "cc", "memory");
 }
 
-#define BKLM_MAX_BRIGHTNESS_DIVISOR 30
+#define BKLM_MAX_BRIGHTNESS_DIVISOR 40
 
 /* Visual (x, y) → wire order. Index 0 is bottom-right: even rows (from the
  * bottom) run right to left, odd rows run left to right. */
