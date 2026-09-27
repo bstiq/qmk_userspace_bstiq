@@ -27,7 +27,6 @@ ASSERT_COMMUNITY_MODULES_MIN_API_VERSION(1, 0, 0);
  *   0-bit low ~108 cycles (864 ns), 1-bit low ~55 cycles (440 ns)
  */
 static uint8_t bklm_wire[LED_MATRIX_MODULE_LED_COUNT * 3];
-static uint8_t bklm_brightness = 255;
 
 _Static_assert(LED_MATRIX_MODULE_LED_COUNT == BKLM_COLS * BKLM_ROWS, "LED matrix geometry does not match LED_MATRIX_MODULE_LED_COUNT");
 
@@ -97,69 +96,7 @@ static void __attribute__((noinline, noipa, section(".time_critical.bklm_send"))
         : "r3", "r4", "r5", "r6", "r7", "cc", "memory");
 }
 
-/* Stores the module brightness applied on the next bklm_show. 0 is off, 255 is full. */
-void bklm_set_brightness(uint8_t brightness) {
-    bklm_brightness = brightness;
-}
-
-/*
- * Wire level a full-scale channel reaches at keyboard maximum and module
- * brightness 255. The per-key LEDs sit at 3.3 V behind frosted acrylic or
- * keycaps; this strip is 5 V and viewed directly, so it needs a heavy derate.
- * Supply accounts for 1/2 of it (a WS2812 at 3.3 V draws about half the
- * current it does at 5 V, and blue/green fall off further) and viewing for
- * another 1/5 (acrylic and keycaps pass about a fifth of the light). The rest
- * is glare: the panel is still harsh to look at the 25 those two alone allow.
- *
- * This doubles as the panel's color resolution, because a channel only ever
- * takes one of BKLM_PEAK_LEVEL + 1 values and that ceiling falls with the
- * keyboard's own brightness. bklm_scale spends what room there is on hue, so
- * what is left over surfaces as saturation instead: #ffe566 reaches the
- * bottom of the range a purer yellow than it really is. Raise this if that
- * matters more than the glare. Nothing lights below about a twelfth
- * brightness, where the peak rounds to zero.
- */
-#define BKLM_PEAK_LEVEL 6
-
-/*
- * Level a full-scale channel reaches this frame, rounded before any channel is
- * scaled against it. Peak level first, then the module's own control squared
- * so it tracks perceived brightness (a linear 20% is still most of a WS2812's
- * light), then the keyboard's brightness as the per-key matrix uses it.
- *
- * Q16 internally because BKLM_PEAK_LEVEL is single digits: a chain of integer
- * divides truncates away more than the result is worth, and the level used to
- * reach zero and blank the panel at a third brightness. 65536 * 255 * 255 is
- * the largest intermediate and stays inside uint32_t.
- *
- * Hoisted out of the per-channel path because it costs three software divides.
- */
-static uint8_t bklm_frame_level(void) {
-    uint32_t level = ((uint32_t)bklm_brightness * bklm_brightness * 65536) / (255 * 255);
-    level          = level * BKLM_PEAK_LEVEL;
-#    if defined(RGB_MATRIX_ENABLE)
-    level = (level * rgb_matrix_get_val()) / RGB_MATRIX_MAXIMUM_BRIGHTNESS;
-#    endif
-    return (uint8_t)((level + 32768) >> 16);
-}
-
-/*
- * Rounds one full-range channel to its share of the frame's peak level.
- *
- * Scaling against the rounded peak, rather than against the exact ratio the
- * brightness chain asks for, is what holds the hue. Every palette entry has a
- * channel at or near 255, so that channel lands exactly on the peak the frame
- * is really using and the other two keep their proportion to it. Rounding each
- * channel independently against the exact ratio let them round apart instead:
- * at a quarter brightness #ffe566 wanted (1.50, 1.35, 0.60), red crossed the
- * half step and green did not, and it went out as (2, 1, 1) -- red, not the
- * (2, 2, 1) yellow the same peak gives here.
- *
- * + 127 rounds exactly: 255 is odd, so a channel never lands on a half step.
- */
-static uint8_t bklm_scale(uint8_t component, uint8_t level) {
-    return (uint8_t)(((uint32_t)component * level + 127) / 255);
-}
+#define BKLM_MAX_BRIGHTNESS_DIVISOR 30
 
 /* Visual (x, y) → wire order. Index 0 is bottom-right: even rows (from the
  * bottom) run right to left, odd rows run left to right. */
@@ -176,15 +113,19 @@ void bklm_show(const RGB *pixels) {
         return;
     }
 
-    const uint8_t level = bklm_frame_level();
+    const uint8_t brightness = rgb_matrix_get_val();
 
     for (uint8_t y = 0; y < BKLM_ROWS; y++) {
         for (uint8_t x = 0; x < BKLM_COLS; x++) {
             const RGB *src = &pixels[(uint16_t)y * BKLM_COLS + x];
-            uint8_t   *dst = &bklm_wire[bklm_index(x, y) * 3];
-            dst[0]         = bklm_scale(src->g, level);
-            dst[1]         = bklm_scale(src->r, level);
-            dst[2]         = bklm_scale(src->b, level);
+            uint8_t      *dst  = &bklm_wire[bklm_index(x, y) * 3];
+
+            dst[0] = src->g;
+            dst[1] = src->r;
+            dst[2] = src->b;
+            dst[0]   = (dst[0] * brightness) / RGB_MATRIX_MAXIMUM_BRIGHTNESS / BKLM_MAX_BRIGHTNESS_DIVISOR;
+            dst[1]   = (dst[1] * brightness) / RGB_MATRIX_MAXIMUM_BRIGHTNESS / BKLM_MAX_BRIGHTNESS_DIVISOR;
+            dst[2]   = (dst[2] * brightness) / RGB_MATRIX_MAXIMUM_BRIGHTNESS / BKLM_MAX_BRIGHTNESS_DIVISOR;
         }
     }
 

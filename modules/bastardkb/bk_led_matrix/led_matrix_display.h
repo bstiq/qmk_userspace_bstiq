@@ -14,8 +14,5 @@
  * left and y = 0 at the bottom. No-op when pixels is NULL. */
 void bklm_show(const RGB *pixels);
 
-/* Stores the module brightness applied on the next bklm_show. 0 is off, 255 is full. */
-void bklm_set_brightness(uint8_t brightness);
-
 /* Drives the data pin low long enough for the strip to reset. */
 void bklm_init(void);

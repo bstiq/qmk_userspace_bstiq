@@ -34,7 +34,7 @@ _Static_assert(BKLM_DUCK_TOP_ROW + BKLM_DUCK_H <= BKLM_ROWS, "duck sprite hangs 
 /* Same values as led_matrix_icon_palette, kept local so this file does not
  * drag the whole pointer icon table into flash. */
 static const RGB bklm_duck_outline = {0, 0, 0};
-static const RGB bklm_duck_body    = {255, 229, 102}; /* #ffe566 */
+static const RGB bklm_duck_body    = {156, 131, 4}; /* #9c8304 */
 static const RGB bklm_duck_beak    = {255, 138, 61};  /* #ff8a3d */
 static const RGB bklm_duck_water   = {62, 207, 255};  /* #3ecfff */
 
