@@ -11,8 +11,23 @@
 
 ASSERT_COMMUNITY_MODULES_MIN_API_VERSION(1, 0, 0);
 
+static uint32_t bklm_last_input_ms;
+
+/* Any key event resets the idle clock used by housekeeping_task_bk_led_matrix. */
+void process_records_bk_led_matrix_note_last_input(uint16_t keycode, keyrecord_t *record) {
+    // unused(keycode);
+    // unused(record);
+    bklm_last_input_ms = timer_read32();
+}
+
+bool process_record_bk_led_matrix(uint16_t keycode, keyrecord_t *record) {
+    process_records_bk_led_matrix_note_last_input(keycode, record);
+    return false;
+}
+
 /* Reset the strip so the first painted frame starts from a known-off pin. */
 void keyboard_post_init_bk_led_matrix(void) {
+    bklm_last_input_ms = timer_read32();
     bklm_init();
 }
 
@@ -26,7 +41,23 @@ void keyboard_post_init_bk_led_matrix(void) {
  * it is the resting state, not an indicator. */
 void housekeeping_task_bk_led_matrix(void) {
     static uint32_t last_update = 0;
+    static bool     strip_powered = true;
     static RGB      frame[LED_MATRIX_MODULE_LED_COUNT];
+
+    const uint32_t idle_ms = timer_elapsed32(bklm_last_input_ms);
+
+    if (idle_ms >= LED_MATRIX_MODULE_OFF_MS) {
+        if (strip_powered) {
+            memset(frame, 0, sizeof(frame));
+            bklm_set_idle_brightness_divisor(1);
+            bklm_show(frame);
+            strip_powered = false;
+        }
+        return;
+    }
+
+    strip_powered = true;
+    bklm_set_idle_brightness_divisor(idle_ms >= LED_MATRIX_MODULE_DIM_MS ? 2 : 1);
 
     if (timer_elapsed32(last_update) < LED_MATRIX_MODULE_REFRESH_MS) {
         return;

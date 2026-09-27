@@ -20,3 +20,9 @@
 #ifndef LED_MATRIX_MODULE_REFRESH_MS
 #    define LED_MATRIX_MODULE_REFRESH_MS 100
 #endif
+#ifndef LED_MATRIX_MODULE_DIM_MS
+#    define LED_MATRIX_MODULE_DIM_MS 30000 // 30 seconds
+#endif
+#ifndef LED_MATRIX_MODULE_OFF_MS
+#    define LED_MATRIX_MODULE_OFF_MS 120000 // 2 minutes
+#endif

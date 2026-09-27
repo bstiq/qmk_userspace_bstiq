@@ -14,5 +14,7 @@
  * left and y = 0 at the bottom. No-op when pixels is NULL. */
 void bklm_show(const RGB *pixels);
 
+void bklm_set_idle_brightness_divisor(uint8_t divisor);
+
 /* Drives the data pin low long enough for the strip to reset. */
 void bklm_init(void);

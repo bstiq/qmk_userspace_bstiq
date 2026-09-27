@@ -27,6 +27,11 @@ ASSERT_COMMUNITY_MODULES_MIN_API_VERSION(1, 0, 0);
  *   0-bit low ~108 cycles (864 ns), 1-bit low ~55 cycles (440 ns)
  */
 static uint8_t bklm_wire[LED_MATRIX_MODULE_LED_COUNT * 3];
+static uint8_t bklm_idle_brightness_divisor = 1;
+
+void bklm_set_idle_brightness_divisor(uint8_t divisor) {
+    bklm_idle_brightness_divisor = (divisor == 0) ? 1 : divisor;
+}
 
 _Static_assert(LED_MATRIX_MODULE_LED_COUNT == BKLM_COLS * BKLM_ROWS, "LED matrix geometry does not match LED_MATRIX_MODULE_LED_COUNT");
 
@@ -123,9 +128,9 @@ void bklm_show(const RGB *pixels) {
             dst[0] = src->g;
             dst[1] = src->r;
             dst[2] = src->b;
-            dst[0]   = (dst[0] * brightness) / RGB_MATRIX_MAXIMUM_BRIGHTNESS / BKLM_MAX_BRIGHTNESS_DIVISOR;
-            dst[1]   = (dst[1] * brightness) / RGB_MATRIX_MAXIMUM_BRIGHTNESS / BKLM_MAX_BRIGHTNESS_DIVISOR;
-            dst[2]   = (dst[2] * brightness) / RGB_MATRIX_MAXIMUM_BRIGHTNESS / BKLM_MAX_BRIGHTNESS_DIVISOR;
+            dst[0]   = (dst[0] * brightness) / RGB_MATRIX_MAXIMUM_BRIGHTNESS / BKLM_MAX_BRIGHTNESS_DIVISOR / bklm_idle_brightness_divisor;
+            dst[1]   = (dst[1] * brightness) / RGB_MATRIX_MAXIMUM_BRIGHTNESS / BKLM_MAX_BRIGHTNESS_DIVISOR / bklm_idle_brightness_divisor;
+            dst[2]   = (dst[2] * brightness) / RGB_MATRIX_MAXIMUM_BRIGHTNESS / BKLM_MAX_BRIGHTNESS_DIVISOR / bklm_idle_brightness_divisor;
         }
     }
 
