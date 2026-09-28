@@ -22,7 +22,7 @@ void process_records_bk_led_matrix_note_last_input(uint16_t keycode, keyrecord_t
 
 bool process_record_bk_led_matrix(uint16_t keycode, keyrecord_t *record) {
     process_records_bk_led_matrix_note_last_input(keycode, record);
-    return false;
+    return true;
 }
 
 /* Reset the strip so the first painted frame starts from a known-off pin. */
@@ -39,9 +39,11 @@ void keyboard_post_init_bk_led_matrix(void) {
  * a held modifier and the layer stack each fill the panel on their own, so
  * layering them would only cut holes in one another. The duck is last because
  * it is the resting state, not an indicator. */
+
+static bool strip_powered = true;
+
 void housekeeping_task_bk_led_matrix(void) {
     static uint32_t last_update = 0;
-    static bool     strip_powered = true;
     static RGB      frame[LED_MATRIX_MODULE_LED_COUNT];
 
     const uint32_t idle_ms = timer_elapsed32(bklm_last_input_ms);
@@ -69,4 +71,12 @@ void housekeeping_task_bk_led_matrix(void) {
         bklm_draw_bobbing_duck(frame);
     }
     bklm_show(frame);
+}
+
+void suspend_power_down_bk_led_matrix(void) {
+    static RGB      frame[LED_MATRIX_MODULE_LED_COUNT];
+    memset(frame, 0, sizeof(frame));
+    bklm_set_idle_brightness_divisor(1);
+    bklm_show(frame);
+    strip_powered = false;
 }
