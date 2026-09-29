@@ -381,6 +381,9 @@ void keyboard_post_init_bk_pointing_device(void) {
     }
 
     bkpd_mode_set_active(MODE_NORMAL);
+    
+    // sync pointing modes across sides
+    transaction_register_rpc(RPC_ID_POINTING_INFO_SYNC, pointing_info_sync_handler);
 }
 
 /**
