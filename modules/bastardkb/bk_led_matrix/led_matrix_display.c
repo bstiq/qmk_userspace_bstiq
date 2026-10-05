@@ -15,10 +15,7 @@ ASSERT_COMMUNITY_MODULES_MIN_API_VERSION(1, 0, 0);
 #endif
 
 /*
- * Bit-banged WS2812 on LED_MATRIX_MODULE_PIN.
- *
- * bklm_show receives full-scale RGB in visual order. Brightness is applied
- * while copying into bklm_wire as GRB, which is what the LEDs expect.
+ * Bit-banged WS2812. Brightness is applied while copying into bklm_wire as GRB.
  * The sender runs from SRAM and holds interrupts off for the frame (~6 ms).
  *
  * Thumb-16 shifts and adds are raw .hword encodings; this assembler rejects
@@ -36,10 +33,9 @@ void bklm_set_idle_brightness_divisor(uint8_t divisor) {
 _Static_assert(LED_MATRIX_MODULE_LED_COUNT == BKLM_COLS * BKLM_ROWS, "LED matrix geometry does not match LED_MATRIX_MODULE_LED_COUNT");
 
 /*
- * r0 = pin mask, r1 = byte count, r2 = GRB bytes.
+ * r0 = pin mask, r1 = byte count, r2 = GRB bytes. The caller disables interrupts.
  * The pointer is an asm input so the scaled buffer cannot be optimized away.
  */
-/* Bit-bangs one GRB frame. The caller disables interrupts for the duration. */
 static void __attribute__((noinline, noipa, section(".time_critical.bklm_send"))) bklm_send(uint32_t pin_mask, uint32_t byte_count, const uint8_t *data) {
     register uint32_t      mask asm("r0")  = pin_mask;
     register uint32_t      count asm("r1") = byte_count;
@@ -112,7 +108,6 @@ static uint16_t bklm_index(uint8_t x, uint8_t y) {
     return (uint16_t)y * BKLM_COLS + x;
 }
 
-/* Paints one visual framebuffer and returns after the strip latches. No-op when pixels is NULL. */
 void bklm_show(const RGB *pixels) {
     if (pixels == NULL) {
         return;
@@ -141,7 +136,6 @@ void bklm_show(const RGB *pixels) {
     wait_us(280); /* latch / reset */
 }
 
-/* Drives the data pin low long enough for the strip to reset. */
 void bklm_init(void) {
     gpio_set_pin_output(LED_MATRIX_MODULE_PIN);
     gpio_write_pin_low(LED_MATRIX_MODULE_PIN);

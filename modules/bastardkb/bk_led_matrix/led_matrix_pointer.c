@@ -4,6 +4,7 @@
 #include QMK_KEYBOARD_H
 
 #include "led_matrix_pointer.h"
+#include "led_matrix.h"
 
 #ifdef COMMUNITY_MODULE_BK_POINTING_DEVICE_ENABLE
 #    include "bk_pointing_device.h"
@@ -13,7 +14,6 @@
 #    include "led_matrix_data.h"
 
 /*
- * Named modes are a table so a new picture is one line, not a new branch.
  * Unspecified slots stay NULL: Normal has no pictogram and falls through.
  */
 static const led_matrix_icon_t *const bklm_icon_by_mode[] = {
@@ -31,18 +31,7 @@ static const led_matrix_icon_t *const bklm_icon_by_mode[] = {
 static led_matrix_icon_t bklm_icon_custom;
 
 
-/**
- * \brief TODO / process mouse movements to change what's displayed based on current active mode
- */
- report_mouse_t pointing_device_task_bk_led_matrix(report_mouse_t mouse_report) {
-//     if (is_keyboard_master()) {
-// #ifndef POINTING_DEVICE_DRIVER_digitizer
-//         mouse_report = bkpd_process_active_mode(mouse_report);
-//         mouse_report = pointing_device_task_user(mouse_report);
-// #endif
-//     }
-    return mouse_report;
-}
+/* ykz89: pointing_device_task_bk_led_matrix lives in bk_led_matrix.c. */
 
 /* Stacks the shared C on a 0-based digit (slot 0 → "1"). Never returns NULL. */
 static const led_matrix_icon_t *bklm_icon_compose_custom(uint8_t slot) {
@@ -53,8 +42,7 @@ static const led_matrix_icon_t *bklm_icon_compose_custom(uint8_t slot) {
     return &bklm_icon_custom;
 }
 
-/* Table for named modes; custom is letter+digit, not five full wells.
- * NULL means "no picture" — Normal, or a mode this file does not know. */
+/* NULL means "no picture" — Normal, or a mode this file does not know. */
 static const led_matrix_icon_t *bklm_pointer_resolve_icon(uint8_t mode) {
     if (mode >= MODE_CUSTOM1 && mode <= MODE_CUSTOM5) {
         return bklm_icon_compose_custom((uint8_t)(mode - MODE_CUSTOM1));
@@ -66,8 +54,7 @@ static const led_matrix_icon_t *bklm_pointer_resolve_icon(uint8_t mode) {
     return NULL;
 }
 
-/* Places the well in the centered gutter. Caller passes a real icon.
- * Lives here so the palette is not copied into a second .c. */
+/* Lives here so the palette is not copied into a second .c. */
 static void bklm_draw_icon(RGB *pixels, const led_matrix_icon_t *icon) {
     const uint8_t origin_x = (BKLM_COLS - LED_MATRIX_ICON_W) / 2;
     const uint8_t origin_y = (BKLM_ROWS - LED_MATRIX_ICON_H) / 2;
@@ -86,14 +73,12 @@ static void bklm_draw_icon(RGB *pixels, const led_matrix_icon_t *icon) {
 }
 #endif
 
-/* Active pointing pictogram, centered in the well.
- * Returns false when pixels is NULL, pointing is not built in, or the mode has no picture. */
 bool bklm_pointer_paint(RGB *pixels) {
     if (pixels == NULL) {
         return false;
     }
 #ifdef COMMUNITY_MODULE_BK_POINTING_DEVICE_ENABLE
-    const led_matrix_icon_t *icon = bklm_pointer_resolve_icon(bkpd_mode_get_active_id());
+    const led_matrix_icon_t *icon = bklm_pointer_resolve_icon(bklm_pointer_mode()); // ykz89: was bkpd_mode_get_active_id(), local to the USB half
     if (icon == NULL) {
         return false;
     }
