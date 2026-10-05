@@ -41,6 +41,17 @@ bool process_record_bk_led_matrix(uint16_t keycode, keyrecord_t *record) {
     return true;
 }
 
+/* ykz89: bk_pointing_device keeps its mode on the USB half only, so that half
+ * sends it to the panel half, along with activity and trackball motion. */
+static uint8_t bklm_synced_pointer_mode;
+
+typedef struct __attribute__((packed)) {
+    uint8_t mode;
+    uint8_t activity;
+    uint8_t style; /* trackball animation, picked with LED_MATRIX_ANIMATION_NEXT */
+    int16_t dx, dy; /* motion since the last delivered message */
+} bklm_sync_t;
+
 static int32_t bklm_motion_x, bklm_motion_y; /* USB half: not yet delivered */
 
 /* Only the USB half sees pointer reports. Feed the animation directly when that is
@@ -60,7 +71,72 @@ report_mouse_t pointing_device_task_bk_led_matrix(report_mouse_t mouse_report) {
 }
 
 uint8_t bklm_pointer_mode(void) {
-    return bkpd_mode_get_active_id();
+#ifdef COMMUNITY_MODULE_BK_POINTING_DEVICE_ENABLE
+    if (is_keyboard_master()) {
+        return bkpd_mode_get_active_id();
+    }
+#endif
+    return bklm_synced_pointer_mode;
+}
+
+static void bklm_pointer_sync_handler(uint8_t in_len, const void *in_data, uint8_t out_len, void *out_data) {
+    static uint8_t last_activity;
+    static bool    first = true;
+    if (in_len == sizeof(bklm_sync_t)) {
+        const bklm_sync_t *msg   = (const bklm_sync_t *)in_data;
+        bklm_synced_pointer_mode = msg->mode;
+        // Adopt the USB half's animation; preview it unless this is just the
+        // first message after power-on.
+        if (msg->style != bklm_motion_style) {
+            bklm_motion_style_set(msg->style, !first);
+        }
+        first = false;
+        if (msg->activity != last_activity) {
+            last_activity      = msg->activity;
+            bklm_last_input_ms = timer_read32();
+        }
+        bklm_motion_feed(msg->dx, msg->dy);
+    }
+}
+
+static void bklm_pointer_sync_task(void) {
+    static bool     failed        = true; // nothing delivered yet
+    static uint8_t  sent_mode     = 0xFF;
+    static uint8_t  sent_activity = 0;
+    static uint8_t  sent_style    = 0xFF;
+    static uint32_t last_sent     = 0;
+    const uint32_t  elapsed       = timer_elapsed32(last_sent);
+#ifdef COMMUNITY_MODULE_BK_POINTING_DEVICE_ENABLE
+    const uint8_t mode = bkpd_mode_get_active_id();
+#else
+    const uint8_t mode = 0;
+#endif
+    const bool changed = mode != sent_mode || bklm_activity != sent_activity || bklm_motion_style != sent_style;
+    const bool moving  = bklm_motion_x != 0 || bklm_motion_y != 0;
+
+    // Changes go out at once, motion in batches, a refresh every SYNC_MS;
+    // failed sends retry every 100 ms, not every loop.
+    const bool due = failed ? elapsed >= 100
+                            : (changed && !moving) || (moving && elapsed >= LED_MATRIX_MODULE_MOTION_SYNC_MS) || elapsed >= LED_MATRIX_MODULE_SYNC_MS;
+    if (!due) {
+        return;
+    }
+    const bklm_sync_t msg = {
+        .mode     = mode,
+        .activity = bklm_activity,
+        .style    = bklm_motion_style,
+        .dx       = (int16_t)CONSTRAIN(bklm_motion_x, INT16_MIN, INT16_MAX),
+        .dy       = (int16_t)CONSTRAIN(bklm_motion_y, INT16_MIN, INT16_MAX),
+    };
+    failed    = !transaction_rpc_send(RPC_ID_BKLM_POINTER_SYNC, sizeof(msg), &msg);
+    last_sent = timer_read32();
+    if (!failed) {
+        sent_mode     = msg.mode;
+        sent_activity = msg.activity;
+        sent_style    = msg.style;
+        bklm_motion_x -= msg.dx;
+        bklm_motion_y -= msg.dy;
+    }
 }
 
 static bool bklm_on_panel_half(void) {
@@ -71,6 +147,7 @@ static bool bklm_on_panel_half(void) {
 void keyboard_post_init_bk_led_matrix(void) {
     bklm_last_input_ms = timer_read32();
     bklm_motion_style_load();
+    transaction_register_rpc(RPC_ID_BKLM_POINTER_SYNC, bklm_pointer_sync_handler);
     if (bklm_on_panel_half()) {
         bklm_init();
     }
@@ -87,6 +164,10 @@ void housekeeping_task_bk_led_matrix(void) {
     static uint32_t last_update = 0;
     static RGB      frame[LED_MATRIX_MODULE_LED_COUNT];
 
+    // ykz89: the USB half feeds the panel half; only the panel half draws.
+    if (is_keyboard_master() && !bklm_on_panel_half()) {
+        bklm_pointer_sync_task();
+    }
     if (!bklm_on_panel_half()) {
         return;
     }
