@@ -1,0 +1,34 @@
+---
+description: Do not run shell commands in this workspace; verify by reading and hand the build to the user
+alwaysApply: true
+---
+
+# No shell commands
+
+The agent shell is unusable here. The repo lives in WSL (`/home/qlebastard/qmk_userspace_bstiq`)
+while the shell host is Windows PowerShell, so POSIX commands are mangled, `wsl bash -lc "..."`
+wrappers return no exit status, and long commands like `qmk compile` kill the session.
+
+Do not call the shell tool. That includes `git`, `qmk`, `make`, `ls`, `cat`, and anything wrapped
+in `wsl`.
+
+## Instead
+
+- Use the file tools (read, search, glob, edit) for everything the shell would have been used for.
+- Verify changes by reading the code back and checking the linter. Count fixed-width sprite rows
+  and array bounds by hand.
+- Never claim a build passed. Say what was verified and what was not, then give the user the exact
+  command to run.
+
+```
+# ❌ BAD
+wsl bash -lc "cd ~/qmk_userspace_bstiq && qmk compile -kb bastardkb/dilemma/4x6_4_procyon -km vendor"
+
+# ✅ GOOD — in the reply, for the user to run in their own WSL terminal
+qmk compile -c -kb bastardkb/dilemma/4x6_4_procyon -km vendor
+```
+
+## Git
+
+No `git` calls either: no `status`, `diff`, `add`, `commit`, or `push`. Describe the edits made and
+let the user commit. `compile_all_keymaps.sh` is likewise theirs to run.

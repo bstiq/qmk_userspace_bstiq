@@ -19,6 +19,7 @@
 #include "bk_pointing_modes.h"
 #include "bk_pointing_device.h"
 #include "math.h"
+#include "transactions.h"
 
 #define BK_POINTING_DEVICE_DRAGSCROLL_BUFFER_SIZE 30
 // #ifdef POINTING_DEVICE_DRIVER_digitizer
@@ -84,6 +85,14 @@ bool sniping_modifier_active = false;
 
 /* -----------------------------------------------------------------------------
             Helper functions for mode management */
+
+void pointing_info_sync_handler(uint8_t initiator2target_buffer_size, const void *initiator2target_buffer, uint8_t target2initiator_buffer_size, void *target2initiator_buffer) {
+    if (!is_keyboard_master()) {
+        uint16_t *data        = (uint16_t *)initiator2target_buffer;
+        uint16_t  mode_id    = data[0];
+        bkpd_deactivate_old_mode_and_activate_new(mode_id); // only needed for local processing (eg. LED Matrix module)
+    }
+}
 
 void bkpd_modes_init(void) {
 
@@ -202,6 +211,12 @@ void bkpd_mode_release(uint8_t mode_id) {
 
     // in all cases, affect DPI
     bkpd_mode_apply_dpi(active_mode->id);
+
+    // sync secondary
+    if (is_keyboard_master()) {
+        uint16_t data[] = {active_mode->id};
+        transaction_rpc_send(RPC_ID_POINTING_INFO_SYNC, sizeof(data), data);
+    }
 }
 
 void bkpd_mode_set_active(uint8_t id) {
