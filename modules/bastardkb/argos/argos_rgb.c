@@ -39,6 +39,9 @@ void argos_rgb_load_from_eeprom(void) {
 
 // Layer state indicator
 bool rgb_matrix_indicators_advanced_argos(uint8_t led_min, uint8_t led_max) {
+
+    static bool ran_start_animation = false;
+
 #    ifdef COMMUNITY_MODULE_BK_POINTING_DEVICE_ENABLE
     // if the pointing module is already changing the DPI settings, it will handle custom RGB indicators
     if (bkpd_is_changing_dpi_settings()) {
@@ -52,7 +55,7 @@ bool rgb_matrix_indicators_advanced_argos(uint8_t led_min, uint8_t led_max) {
 
     // caps locks
     if (host_keyboard_led_state().caps_lock == true) {
-        rgb_matrix_set_color_all(RGB_RED);
+        rgb_matrix_set_color_all(255, 0, 0);
         return true;
     }
 
@@ -60,6 +63,10 @@ bool rgb_matrix_indicators_advanced_argos(uint8_t led_min, uint8_t led_max) {
     const uint16_t min_index = layer * RGBLIGHT_LED_COUNT;
 
     for (int i = led_min; i < led_max; i++) {
+        if(!ran_start_animation) {
+            ran_start_animation = argos_rgb_run_start_animation(led_min, led_max);
+            break;
+        }
         const uint16_t index = min_index + i;
         if (argos_rgb_entries[index].custom) {
             if (argos_rgb_entries[index].on) {
@@ -83,6 +90,47 @@ bool rgb_matrix_indicators_advanced_argos(uint8_t led_min, uint8_t led_max) {
     }
 
     return true;
+}
+
+// Start animation on the RGB
+// we also manage the right-side of the keyboard, which led index starts at RGBLIGHT_LED_COUNT/2
+// for now, primary side only
+bool argos_rgb_run_start_animation(uint8_t led_min, uint8_t led_max) {
+    static int16_t current_led = 0;
+    static bool has_initialized = false;
+
+    if(!is_keyboard_left() && !has_initialized) {
+        current_led = RGBLIGHT_LED_COUNT/2 + 1;
+        has_initialized = true;
+    }
+    // time it, 50ms per led
+    static uint32_t last_sync = 0;
+    for (int i = led_min; i < led_max; i++) {
+        if(i <= current_led) {
+            if (timer_elapsed32(last_sync) > 15) {
+                if(i == current_led) {
+                    last_sync = timer_read32();
+                    current_led ++;
+                }
+            }
+        }
+        else {
+            // turn off all other leds
+            rgb_matrix_set_color(i, 0, 0, 0);
+        }
+    }
+
+    if(is_keyboard_left()) {
+        if(current_led >= RGBLIGHT_LED_COUNT /2) {
+            return true;
+        }
+    } else {
+        if(current_led >= RGBLIGHT_LED_COUNT) {
+            return true;
+        }
+    }
+
+    return false;
 }
 
 /*

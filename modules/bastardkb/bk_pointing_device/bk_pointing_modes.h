@@ -79,4 +79,3 @@ report_mouse_t bkpd_mode_custom_process(report_mouse_t mouse_report);
 void bkpd_custom_mode_set_keys(uint8_t mode_id, uint8_t *mode_config);
 void bkpd_custom_mode_set_keys(uint8_t mode_id, uint8_t *mode_config);
 void bkpd_mode_set_activate_on_layer(uint8_t mode_id, uint8_t activate_on_layer);
-void pointing_info_sync_handler(uint8_t initiator2target_buffer_size, const void *initiator2target_buffer, uint8_t target2initiator_buffer_size, void *target2initiator_buffer);
