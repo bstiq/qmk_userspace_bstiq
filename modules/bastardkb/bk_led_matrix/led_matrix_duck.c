@@ -9,12 +9,8 @@
 #define BKLM_DUCK_W 11
 #define BKLM_DUCK_H 12
 
-/* Water never moves. The hull is painted over it, so the duck reads as sitting
- * in the water rather than on top of it.
- *
- * The surface has to reach the row where the body flares out. Any shallower
- * and the hull's curve pulls away from a flat waterline, leaving a wedge of
- * dark cells between the two. */
+/* Static water, painted under the hull. It must reach the row where the body
+ * flares out, or a wedge of dark cells shows between hull and waterline. */
 #define BKLM_DUCK_WATER_ROWS 3
 
 /* Top row of the sprite when the duck rides low. Bobbing lifts it by one,
@@ -39,20 +35,13 @@ static const RGB bklm_duck_beak    = {255, 138, 61};  /* #ff8a3d */
 static const RGB bklm_duck_water   = {62, 207, 255};  /* #3ecfff */
 
 /*
- * Char art instead of the PIX_ tables in led_matrix_data.h: those spell one
- * token per cell, which is unreadable at 11x12, and including that header
- * would copy every pointer icon into flash a second time. Here the bitmap is
- * its own comment, so there is nothing to keep in sync.
+ * Char art instead of the PIX_ tables in led_matrix_data.h, which are unreadable
+ * at 11x12 and would copy every pointer icon into flash again. Row 0 is the top.
  *
  *   '.' transparent - water or the dark well shows through
- *   '#' outline     - an edge over water, invisible over the dark well, which
- *                     is what you want in both cases
+ *   '#' outline     - an edge over water, invisible over the dark well
  *   'O' body
- *   '*' beak        - butted against the body, because the black cell the
- *                     reference picture puts between them would leave the beak
- *                     floating where there is no water behind it
- *
- * Row 0 is the top of the picture.
+ *   '*' beak        - butted against the body so it never floats over the dark well
  */
 static const char bklm_duck_sprite[BKLM_DUCK_H][BKLM_DUCK_W + 1] = {
     "....###....",
@@ -75,10 +64,8 @@ static RGB *bklm_duck_pixel_at(RGB *pixels, uint8_t x, uint8_t row) {
     return &pixels[(uint16_t)y * BKLM_COLS + x];
 }
 
-/* Duck floating on a strip of water, bobbing one row every BKLM_DUCK_BOB_MS.
- * The scene is the resting state, so it paints unconditionally: the composer
- * calls it only once every indicator has declined the frame.
- * No-op when pixels is NULL. */
+/* The resting state, so it always paints: the composer calls it only once
+ * every indicator has declined the frame. No-op when pixels is NULL. */
 void bklm_draw_bobbing_duck(RGB *pixels) {
     if (pixels == NULL) {
         return;
@@ -90,8 +77,7 @@ void bklm_draw_bobbing_duck(RGB *pixels) {
         }
     }
 
-    /* Two positions straight off the millisecond clock, so there is no frame
-     * counter to carry. The phase jumps once per timer wrap (~49 days). */
+    /* Phase straight off the ms clock; it jumps once per timer wrap (~49 days). */
     const uint8_t top = BKLM_DUCK_TOP_ROW - (uint8_t)((timer_read32() / BKLM_DUCK_BOB_MS) & 1);
 
     for (uint8_t row = 0; row < BKLM_DUCK_H; row++) {

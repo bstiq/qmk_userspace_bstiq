@@ -10,8 +10,8 @@
 #define LED_MATRIX_ICON_H 12
 
 /*
- * Indexed color, not raw RGB: a bitmap says "cyan" instead of {62,207,255}.
- * Recolor the panel by editing one palette slot. Enum order is palette order.
+ * Indexed color: recolor the panel by editing one palette slot.
+ * Enum order is palette order.
  */
 enum {
     LED_MATRIX_PIX_OFF = 0,
@@ -35,9 +35,8 @@ typedef struct {
 } led_matrix_icon_t;
 
 /*
- * Palette and bitmaps are compiled into whichever .c defines
- * LED_MATRIX_ICONS_DEFINE before the include. Without the guard, every
- * includer would get its own copy in flash.
+ * Palette and bitmaps are compiled only into the .c that defines
+ * LED_MATRIX_ICONS_DEFINE, so flash holds one copy.
  */
 #ifdef LED_MATRIX_ICONS_DEFINE
 

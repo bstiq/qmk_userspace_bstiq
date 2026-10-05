@@ -14,8 +14,7 @@
 #define BKLM_MOD_NAME_ADVANCE (BKLM_MOD_NAME_H + 1)
 
 /* A fourth held modifier is not drawn: four names need 4 * 5 - 1 = 19 rows.
- * Letters one row shorter than the layer font are what buy the third name - at
- * five rows tall, three names and their gaps already overflow the panel. */
+ * The letters are one row shorter than the layer font to fit a third name. */
 #define BKLM_MOD_NAME_SLOTS 3
 
 _Static_assert(BKLM_MOD_NAME_W <= BKLM_COLS, "modifier name runs off the right of the panel");
@@ -30,13 +29,9 @@ enum {
 };
 
 /*
- * Char art of the whole word rather than a 3x4 alphabet and a lookup: there are
- * only four labels, so a font would carry glyphs nothing draws and one more
- * table to keep in sync. Same trade the duck sprite makes - the bitmap is its
- * own comment.
- *
- * Three 3-wide letters with a blank column between them. '#' is ink, anything
- * else stays dark. Row 0 is the top of the word.
+ * Char art of whole words rather than a 3x4 font: only four labels, so a font
+ * would carry glyphs nothing draws. '#' is ink, anything else stays dark.
+ * Row 0 is the top of the word.
  */
 static const struct {
     uint8_t mask;
@@ -84,14 +79,10 @@ static const struct {
 static uint8_t bklm_mod_held[BKLM_MOD_COUNT];
 static uint8_t bklm_mod_held_count;
 
-/* Held modifiers in the order their keys went down: released ones drop out of
- * the list, newly held ones append to it.
- *
- * Rebuilt from get_mods() once per frame rather than recorded in
- * process_record, because the composer skips this indicator entirely while a
- * pointer mode owns the panel, and an event-driven list would go stale there.
- * Sampling is self-healing, at the cost of two modifiers pressed inside one
- * refresh period falling back to the order of bklm_mod. */
+/* Rebuilt from get_mods() each frame rather than recorded in process_record:
+ * the composer skips this indicator while a pointer mode owns the panel, so an
+ * event-driven list would go stale. Two modifiers pressed within one refresh
+ * fall back to the order of bklm_mod. */
 static void bklm_mods_track_press_order(uint8_t mods) {
     uint8_t kept = 0;
     for (uint8_t i = 0; i < bklm_mod_held_count; i++) {
@@ -116,9 +107,8 @@ static void bklm_mods_track_press_order(uint8_t mods) {
     }
 }
 
-/* Left-aligned like the layer name, so the spare column stays dark on the
- * right. top_row is the visual top of the word; framebuffer y = 0 is the
- * bottom LED. */
+/* Left-aligned like the layer name. top_row is the visual top of the word;
+ * framebuffer y = 0 is the bottom LED. */
 static void bklm_mods_draw_name(RGB *pixels, uint8_t top_row, const char name[BKLM_MOD_NAME_H][BKLM_MOD_NAME_W + 1], RGB color) {
     for (uint8_t row = 0; row < BKLM_MOD_NAME_H; row++) {
         for (uint8_t col = 0; col < BKLM_MOD_NAME_W; col++) {
@@ -131,13 +121,9 @@ static void bklm_mods_draw_name(RGB *pixels, uint8_t top_row, const char name[BK
     }
 }
 
-/* CTL / SFT / ALT / GUI for the held modifiers, stacked in the order they were
- * pressed and painted in the active layer's color, so the panel still says
- * which layer you are on while a modifier hides the layer stack. Left and right
- * keys of the same modifier share one name.
- *
- * Returns false without painting when pixels is NULL or nothing is held, which
- * is how the composer knows to fall through to the layer stack. */
+/* Held modifier names in press order, in the active layer's color so the panel
+ * still says which layer is on. Left and right keys share one name. Returns
+ * false when pixels is NULL or nothing is held. */
 bool bklm_draw_active_modifier_names(RGB *pixels) {
     if (pixels == NULL) {
         return false;

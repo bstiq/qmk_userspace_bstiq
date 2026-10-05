@@ -20,23 +20,17 @@
 /* The last glyph has no blank column after it, hence the -1. */
 _Static_assert(BKLM_LAYER_NAME_LEN * BKLM_GLYPH_ADVANCE - 1 <= BKLM_COLS, "layer name runs off the right of the panel");
 
-/* One slot per layer, layer BKLM_LAYER_SLOTS-1 at the top down to layer 0 at
- * the bottom. An inactive slot is a single bar; the active one grows into a
- * block of line, blank row, name, blank row, line - so the name sits
- * BKLM_LAYER_BLOCK_NAME_ROW rows into the block, with the same gap below.
- *
- * Seven bars plus one block is exactly BKLM_ROWS, which is what lets the stack
- * fill the panel whichever layer is active with no padding to place. Widen the
- * gaps or the font and the assert below stops the build rather than letting the
- * stack quietly overflow the panel. */
+/* One slot per layer, top (BKLM_LAYER_SLOTS-1) to bottom (0). An inactive slot
+ * is a single bar; the active one is a block: line, blank row, name, blank row,
+ * line. Seven bars plus one block is exactly BKLM_ROWS, so the stack fills the
+ * panel whichever layer is active. */
 #define BKLM_LAYER_SLOTS          8
 #define BKLM_LAYER_BLOCK_NAME_ROW 2
 #define BKLM_LAYER_BLOCK_H        (2 * BKLM_LAYER_BLOCK_NAME_ROW + BKLM_GLYPH_H)
 
 _Static_assert((BKLM_LAYER_SLOTS - 1) + BKLM_LAYER_BLOCK_H == BKLM_ROWS, "layer stack does not fill the panel exactly");
 
-/* Inactive bars are scaled down so the active layer's lines and name carry the
- * frame. Same num/den idiom as the brightness trim in led_matrix_display.c. */
+/* Inactive bars are dimmed so the active layer's lines and name carry the frame. */
 #define BKLM_LAYER_DIM_NUM 1
 #define BKLM_LAYER_DIM_DEN 2
 
@@ -47,13 +41,8 @@ _Static_assert((BKLM_LAYER_SLOTS - 1) + BKLM_LAYER_BLOCK_H == BKLM_ROWS, "layer 
 _Static_assert(BKLM_LAYER_BAR_W <= BKLM_COLS, "inactive layer bar is wider than the panel");
 
 /*
- * Char art rather than packed bits, the same trade the duck sprite makes: the
- * bitmap is its own comment, so there is nothing to keep in sync. '#' is ink,
- * anything else is transparent. Row 0 is the top of the letter.
- *
- * M, N and W are the honest limit of three columns - they carry a shoulder
- * instead of a diagonal. They still read in context, which is all a
- * three-letter layer name needs.
+ * '#' is ink, anything else is transparent. Row 0 is the top of the letter.
+ * M, N and W carry a shoulder instead of a diagonal: three columns allow no more.
  */
 static const char bklm_font_upper[26][BKLM_GLYPH_H][BKLM_GLYPH_W + 1] = {
     {"###", "#.#", "###", "#.#", "#.#"}, /* A */
@@ -114,12 +103,8 @@ static bklm_glyph_t bklm_font_glyph(char c) {
 }
 
 /*
- * TODO: these are the Dilemma 4x6 layers. The 3x5 keymaps use a different enum
- * (base, function, navigation, media, pointer, numeral, symbols, lcd) and need
- * their own table once the module can tell the two boards apart.
- *
- * Leave a layer this board does not define empty rather than inventing a word
- * for it: bklm_layer_name_of falls back to "L" and the number.
+ * TODO: these are the Dilemma 4x6 layers; the 3x5 keymaps need their own table.
+ * Leave undefined layers empty: bklm_layer_name_of falls back to "L" and the number.
  */
 static const char bklm_layer_name[BKLM_LAYER_SLOTS][BKLM_LAYER_NAME_LEN + 1] = {
     "BSE", /* LAYER_BASE */
@@ -132,15 +117,21 @@ static const char bklm_layer_name[BKLM_LAYER_SLOTS][BKLM_LAYER_NAME_LEN + 1] = {
     "",
 };
 
-/* "L" and the layer number for a layer the table does not name, so an
- * unexpected layer still identifies itself. The blank between them is a column
- * the font has no glyph for, which draws as nothing.
- *
- * The buffer is static because the caller only reads it before the next call,
- * and layer is already clamped below BKLM_LAYER_SLOTS, so the digit is one. */
+/* "L <n>" for an unnamed layer. The buffer is static because the caller reads it
+ * before the next call; layer is clamped below BKLM_LAYER_SLOTS, so one digit. */
+/* ykz89: the keymap names its own layers (up to three letters); NULL falls
+ * back to the table above, then to "L" and the number. */
+__attribute__((weak)) const char *bklm_layer_name_user(uint8_t layer) {
+    return NULL;
+}
+
 static const char *bklm_layer_name_of(uint8_t layer) {
     static char numbered[BKLM_LAYER_NAME_LEN + 1] = "L 0";
 
+    const char *user = bklm_layer_name_user(layer);
+    if (user != NULL) {
+        return user;
+    }
     if (bklm_layer_name[layer][0] != '\0') {
         return bklm_layer_name[layer];
     }
@@ -188,8 +179,7 @@ static void bklm_layers_fill_row(RGB *pixels, uint8_t row, uint8_t width, RGB co
     }
 }
 
-/* Three glyphs left-aligned like the bars, so the last ink column is 10 and the
- * spare column stays dark on the right. top_row is the visual top of the text. */
+/* Left-aligned like the bars. top_row is the visual top of the text. */
 static void bklm_layers_draw_name(RGB *pixels, uint8_t top_row, const char *name, RGB color) {
     for (uint8_t i = 0; i < BKLM_LAYER_NAME_LEN; i++) {
         const bklm_glyph_t glyph = bklm_font_glyph(name[i]);
@@ -210,14 +200,9 @@ static void bklm_layers_draw_name(RGB *pixels, uint8_t top_row, const char *name
     }
 }
 
-/* One bar per layer, layer 7 at the top down to layer 0 at the bottom, each in
- * its own color. Inactive bars are dimmed and stop short of the right edge; the
- * active layer instead gets a nine-row block at full brightness and full width
- * - line, blank row, its name over five rows, blank row, line - so it reads as
- * the one thing on the panel.
- *
- * Returns false without painting when pixels is NULL or the base layer is
- * active: layer 0 is the resting state, and the composer shows the duck there. */
+/* One bar per layer in its own color, the active layer as a named block.
+ * Returns false when pixels is NULL or on the base layer, where the composer
+ * shows the duck. */
 bool bklm_draw_layer_stack(RGB *pixels) {
     if (pixels == NULL) {
         return false;
