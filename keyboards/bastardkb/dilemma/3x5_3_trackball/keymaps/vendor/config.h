@@ -38,3 +38,11 @@
 #undef RGBLIGHT_LED_COUNT
 #endif
 #define RGBLIGHT_LED_COUNT 72
+
+ // Left-half 12x16 WS2812 LED matrix (modules/bastardkb/bk_led_matrix), on the VIK port.
+#define LED_MATRIX_MODULE_PIN GP12
+// Custom animations after the built-in ones: Bad Apple!! (badapple.c) and the
+// PSX DOOM fire (doomfire.c).
+#define LED_MATRIX_MODULE_MOTION_USER_COUNT 2
+// Keep animating for 10 s after the ball stops, then the swimming duck shows.
+#define LED_MATRIX_MODULE_MOTION_IDLE_MS 10000
