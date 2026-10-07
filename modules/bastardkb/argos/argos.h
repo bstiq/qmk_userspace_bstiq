@@ -9,7 +9,7 @@
 #include "util.h"
 
 // Argos protocol version
-#define ARGOS_PROTOCOL_VERSION 0x0006
+#define ARGOS_PROTOCOL_VERSION 0x0007
 #define ARGOS_CMD_PREFIX 0x90 // hopefully something that won't conflict with VIA
 #define QMK_KEYCODES_VERSION_COMPATIBLE_0 0
 #define QMK_KEYCODES_VERSION_COMPATIBLE_1 0

@@ -242,6 +242,10 @@ bool argos_handle_command(uint8_t *data, uint8_t length) {
                 (command_data[i * 2 + 1] << 8) | (command_data[i * 2 + 2]);
             argos_tap_dance_set_keycode(index, keycode, i);
         }
+        // update timing
+        uint16_t timing = command_data[9] & 0xFF;
+        timing |= (command_data[10] << 8);
+        argos_tap_dance_set_timing(timing, index);
         send_data = true; // ack
         break;
     }
@@ -540,11 +544,6 @@ void argos_keycode_tap(uint16_t keycode) {
     argos_keycode_down(keycode);
     wait_ms(ARGOS_TAP_CODE_DELAY);
     argos_keycode_up(keycode);
-}
-
-// override tapping term
-uint16_t get_tapping_term(uint16_t keycode, keyrecord_t *record) {
-    return argos_config.global_tapping_term;
 }
 
 // override combo term
