@@ -33,6 +33,8 @@ enum argos_pointer_command_id {
     argos_id_pointer_command_id_set_auto_precision_on_mouse_layer_enabled = 0x06,
     argos_id_pointer_command_id_set_custom_mode = 0x07,
     argos_id_pointer_command_id_set_activate_on_layer = 0x08,
+    argos_id_pointer_command_id_get_auto_mouse_time = 0x09,
+    argos_id_pointer_command_id_set_auto_mouse_time = 0x0A,
 };
 #endif
 
@@ -65,6 +67,7 @@ typedef union {
         bkpd_mode_t modes_config[MODE_LAST];
         bkpd_pointing_mode_custom_t custom_modes_config[BKPD_AMOUNT_CUSTOM_MODES];
         uint8_t active_mode;
+        uint16_t auto_mouse_time;
     } __attribute__((packed));
 } bkpd_config_t;
 
