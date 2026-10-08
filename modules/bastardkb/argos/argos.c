@@ -98,6 +98,7 @@ void keyboard_post_init_argos(void) {
         argos_config.has_displayed_welcome_message = false;
         argos_config.global_tapping_term = TAPPING_TERM;
         argos_config.global_combo_term = COMBO_TERM;
+        argos_config.flow_tap_term = FLOW_TAP_TERM;
         argos_write_eeprom(ARGOS_OFFSET_CONFIG, &argos_config,
                            sizeof(argos_config));  
 #if defined(RGBLIGHT_ENABLE) || defined(RGB_MATRIX_ENABLE)

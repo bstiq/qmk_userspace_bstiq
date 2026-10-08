@@ -9,7 +9,7 @@
 #include "util.h"
 
 // Argos protocol version
-#define ARGOS_PROTOCOL_VERSION 0x0007
+#define ARGOS_PROTOCOL_VERSION 0x0008
 #define ARGOS_CMD_PREFIX 0x90 // hopefully something that won't conflict with VIA
 #define QMK_KEYCODES_VERSION_COMPATIBLE_0 0
 #define QMK_KEYCODES_VERSION_COMPATIBLE_1 0
@@ -44,6 +44,12 @@ enum argos_command_id {
     argos_id_set_auto_precision_on_mouse_layer_enabled = 0x17, // legacy
     argos_id_set_axis_invert                           = 0x18, // legacy
     argos_id_set_dragscroll_dpi                        = 0x19, // legacy
+    argos_id_term_config                           = 0x1A, // sub-command
+};
+
+enum argos_command_term_id {
+    argos_id_term_flow_tap_get = 0x01,
+    argos_id_term_flow_tap_set = 0x02,
 };
 
 // At the moment, we only support trackpads and trackballs (for Bastard Keyboards)
@@ -75,8 +81,9 @@ typedef struct PACKED {
     bool     has_displayed_welcome_message : 1;
     uint16_t global_tapping_term; // in ms
     uint16_t global_combo_term;   // in ms
+    uint16_t flow_tap_term;
 } argos_config_t;
-_Static_assert(sizeof(argos_config_t) <= 7, "Invalid size for argos_config_t");
+_Static_assert(sizeof(argos_config_t) <= 9, "Invalid size for argos_config_t");
 
 typedef struct PACKED {
     uint8_t r;

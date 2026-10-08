@@ -23,6 +23,8 @@
 #define COMBO_TERM_PER_COMBO
 #endif
 
+#define FLOW_TAP_TERM 150
+
 // enables custom global tapping term by Argos
 #ifndef TAPPING_TERM_PER_KEY
 #define TAPPING_TERM_PER_KEY
