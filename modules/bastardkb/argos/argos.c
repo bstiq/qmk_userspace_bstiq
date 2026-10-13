@@ -47,9 +47,6 @@ ASSERT_COMMUNITY_MODULES_MIN_API_VERSION(1, 0, 0);
 // Magic position for keycode execution
 #define ARGOS_MATRIX_MAGIC 240
 
-// Whether we are capturing keycodes (testing keymap)
-bool capturing_all_keycodes = false;
-
 // used for exclusive layers
 bool hold_layer = false;
 layer_state_t LO_layer_state = 0;
@@ -223,15 +220,7 @@ bool argos_handle_command(uint8_t *data, uint8_t length) {
     }
 
     case argos_id_capture_all_keycodes: {
-        // This command is used to capture all keycodes pressed.
-        // It is meant to be used to test the keymap, in the "test keycodes"
-        // tab.
-        uint8_t new_state = command_data[0];
-        if (new_state) {
-            capturing_all_keycodes = true;
-        } else {
-            capturing_all_keycodes = false;
-        }
+        // legacy
         // we do not ACK, the ACK will be in process_records_argos_capture_all_keycodes
         break;
     }
@@ -435,16 +424,6 @@ bool via_command_kb(uint8_t *data, uint8_t length) {
     return false;
 }
 
-bool process_record_argos(uint16_t keycode, keyrecord_t *record) {
-    // are we capturing all keycodes? (testing keymap)
-    bool captured = process_records_argos_capture_all_keycodes(keycode, record);
-    if (captured) {
-        return false; // we captured a keycode, no need to process further
-    }
-
-    return true;
-}
-
 // process special layer keycodes
 layer_state_t layer_state_set_argos(layer_state_t state) {
     // if we are holding a "this layer only" keycode, pressing any other layer key will be cancelled.
@@ -453,33 +432,6 @@ layer_state_t layer_state_set_argos(layer_state_t state) {
         return LO_layer_state;
     }
     return state;
-}
-
-/*
-    The webapp has a function where we can capture keycodes.
-    We don't want to set "capture keycodes" forever, otherwise switching away from the app
-    Will keep capturing keycodes. Instead, the webapp sends a capture command first and we then setup
-    a back and forth exchange between webapp and keyboard, until the webapp disconnects.
-*/
-bool process_records_argos_capture_all_keycodes(uint16_t keycode, keyrecord_t *record) {
-    // are we capturing all keycodes? (testing keymap)
-    if (capturing_all_keycodes) {
-        // send the keycode to the webapp
-        uint8_t data[32] = {0};
-        data[0] = ARGOS_CMD_PREFIX;
-        data[1] = argos_id_capture_all_keycodes;
-        if (record->event.pressed) {
-            data[2] = 1;
-        } else { // released
-            data[2] = 0;
-        }
-        data[3] = keycode & 0xFF;
-        data[4] = (keycode >> 8) & 0xFF;
-        raw_hid_send(data, sizeof(data));
-        capturing_all_keycodes = false; // Stop capturing keycodes
-        return true; // we captured a keycode, no need to process further
-    }
-    return false;
 }
 
 // Override keymap_key_to_keycode to handle magic position for tap dance/combo

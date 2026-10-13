@@ -121,4 +121,3 @@ void                       argos_keycode_up(uint16_t keycode);
 void                       argos_keycode_tap(uint16_t keycode);
 bool                       argos_tap_dance_read_eeprom(uint8_t index, argos_td_entry_t *entry);
 bool                       argos_tap_dance_write_eeprom(uint8_t index, const argos_td_entry_t *entry);
-bool                       process_records_argos_capture_all_keycodes(uint16_t keycode, keyrecord_t *record);
