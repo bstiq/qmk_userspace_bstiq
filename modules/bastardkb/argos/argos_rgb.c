@@ -37,6 +37,25 @@ void argos_rgb_load_from_eeprom(void) {
     argos_read_eeprom(ARGOS_OFFSET_RGB_MATRIX, argos_rgb_entries, sizeof(argos_rgb_entries));
 }
 
+/*
+    Custom function to clamp the CAPS lock RED light
+    On some devices, too high brightness can brick the keyboard
+*/
+void argos_rgb_caps_lock_indicator_enable(uint8_t led_min, uint8_t led_max){
+
+    for (int i = led_min; i < led_max; i++) {
+        rgb_t rgb = {0, 0, 0};
+        rgb.r     = (255 * rgb_matrix_get_val()) / RGB_MATRIX_MAXIMUM_BRIGHTNESS;
+        rgb.g     = 0;
+        rgb.b     = 0;
+
+        // clamp, otherwise bugs out at high brightness
+        if(rgb.r > RGB_MATRIX_MAXIMUM_BRIGHTNESS - 40) rgb.r = RGB_MATRIX_MAXIMUM_BRIGHTNESS - 40;
+
+        rgb_matrix_set_color(i, rgb.r, rgb.g, rgb.b);
+    }
+}
+
 // Layer state indicator
 bool rgb_matrix_indicators_advanced_argos(uint8_t led_min, uint8_t led_max) {
 #    ifdef COMMUNITY_MODULE_BK_POINTING_DEVICE_ENABLE
@@ -52,7 +71,7 @@ bool rgb_matrix_indicators_advanced_argos(uint8_t led_min, uint8_t led_max) {
 
     // caps locks
     if (host_keyboard_led_state().caps_lock == true) {
-        rgb_matrix_set_color_all(RGB_RED);
+        argos_rgb_caps_lock_indicator_enable(led_min, led_max);
         return true;
     }
 

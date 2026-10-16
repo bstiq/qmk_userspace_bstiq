@@ -519,7 +519,7 @@ uint16_t get_combo_term(uint16_t combo_index, combo_t* combo) {
     return argos_config.global_combo_term;
 }
 
-
+// Custom flow tap term management
 bool argos_dispatch_command_terms(uint8_t* command_id, uint8_t* command_data) {
     if (*command_id != argos_id_term_config)
         return true; // do not process further
@@ -545,4 +545,13 @@ bool argos_dispatch_command_terms(uint8_t* command_id, uint8_t* command_data) {
     }
 
     return true;
+}
+
+// Custom flow tap term management
+uint16_t get_flow_tap_term(uint16_t keycode, keyrecord_t* record,
+                           uint16_t prev_keycode) {
+    if (is_flow_tap_key(keycode) && is_flow_tap_key(prev_keycode)) {
+        return argos_config.flow_tap_term;
+    }
+    return 0;
 }
