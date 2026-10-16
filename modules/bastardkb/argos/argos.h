@@ -60,7 +60,7 @@ enum pointing_device_type {
     pointing_device_type_trackpad_cirque  = 3,
 };
 
-#define ARGOS_COMBO_ENTRIES 16
+#define ARGOS_COMBO_ENTRIES 24
 #define ARGOS_KEYS_PER_COMBO 4
 
 // We define our own structure, with the keys NOT const
