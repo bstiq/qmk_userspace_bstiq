@@ -30,6 +30,10 @@
 #define TAPPING_TERM_PER_KEY
 #endif
 
+#ifndef QUICK_TAP_TERM_PER_KEY
+#define QUICK_TAP_TERM_PER_KEY
+#endif
+
 // Macro text delay, otherwise keys can overwrite themselves and skip
 #undef DYNAMIC_KEYMAP_MACRO_DELAY
 #define DYNAMIC_KEYMAP_MACRO_DELAY 8

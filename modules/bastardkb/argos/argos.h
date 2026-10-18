@@ -50,6 +50,8 @@ enum argos_command_id {
 enum argos_command_term_id {
     argos_id_term_flow_tap_get = 0x01,
     argos_id_term_flow_tap_set = 0x02,
+    argos_id_term_quick_tap_get = 0x03,
+    argos_id_term_quick_tap_set = 0x04,
 };
 
 // At the moment, we only support trackpads and trackballs (for Bastard Keyboards)
@@ -82,8 +84,11 @@ typedef struct PACKED {
     uint16_t global_tapping_term; // in ms
     uint16_t global_combo_term;   // in ms
     uint16_t flow_tap_term;
+    uint16_t quick_tap_term;
 } argos_config_t;
-_Static_assert(sizeof(argos_config_t) <= 9, "Invalid size for argos_config_t");
+
+// manually sync with post_config.h
+_Static_assert(sizeof(argos_config_t) <= 11, "Invalid size for argos_config_t");
 
 typedef struct PACKED {
     uint8_t r;

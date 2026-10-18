@@ -38,7 +38,7 @@
 #    define ARGOS_OFFSET_CONFIG (ARGOS_OFFSET_LED_MATRIX_CONFIG + ARGOS_SIZE_LED_MATRIX_CONFIG)
 #endif
 
-#define ARGOS_SIZE_CONFIG 9
+#define ARGOS_SIZE_CONFIG 11 // manually sync with argos.h
 
 #define ARGOS_OFFSET_COMBO (ARGOS_OFFSET_CONFIG + ARGOS_SIZE_CONFIG)
 #define ARGOS_COMBO_ENTRIES 24 // this was already defined in argos.h, TODO fix this hardcoding...

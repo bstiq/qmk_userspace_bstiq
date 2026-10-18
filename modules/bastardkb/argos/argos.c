@@ -96,6 +96,7 @@ void keyboard_post_init_argos(void) {
         argos_config.global_tapping_term = TAPPING_TERM;
         argos_config.global_combo_term = COMBO_TERM;
         argos_config.flow_tap_term = FLOW_TAP_TERM;
+        argos_config.quick_tap_term = QUICK_TAP_TERM;
         argos_write_eeprom(ARGOS_OFFSET_CONFIG, &argos_config,
             sizeof(argos_config));
 #if defined(RGBLIGHT_ENABLE) || defined(RGB_MATRIX_ENABLE)
@@ -534,7 +535,17 @@ bool argos_dispatch_command_terms(uint8_t* command_id, uint8_t* command_data) {
         }
         case argos_id_term_flow_tap_set: {
             argos_config.flow_tap_term = (command_data[0] << 8) | command_data[1];
-            printf("flow tap: %d\n", argos_config.flow_tap_term);
+            argos_write_eeprom(ARGOS_OFFSET_CONFIG, &argos_config,
+                sizeof(argos_config));
+            break;
+        }
+        case argos_id_term_quick_tap_get: {
+            command_data[0] = (argos_config.quick_tap_term >> 8) & 0xFF;
+            command_data[1] = argos_config.quick_tap_term & 0xFF;
+            break;
+        }
+        case argos_id_term_quick_tap_set: {
+            argos_config.quick_tap_term = (command_data[0] << 8) | command_data[1];
             argos_write_eeprom(ARGOS_OFFSET_CONFIG, &argos_config,
                 sizeof(argos_config));
             break;
@@ -554,4 +565,9 @@ uint16_t get_flow_tap_term(uint16_t keycode, keyrecord_t* record,
         return argos_config.flow_tap_term;
     }
     return 0;
+}
+
+// Custom quick tap term management
+uint16_t get_quick_tap_term(uint16_t keycode, keyrecord_t *record) {
+    return argos_config.quick_tap_term;
 }
