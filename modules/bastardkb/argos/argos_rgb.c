@@ -49,8 +49,18 @@ void argos_rgb_caps_lock_indicator_enable(uint8_t led_min, uint8_t led_max){
         rgb.g     = 0;
         rgb.b     = 0;
 
-        // clamp, otherwise bugs out at high brightness
-        if(rgb.r > RGB_MATRIX_MAXIMUM_BRIGHTNESS - 40) rgb.r = RGB_MATRIX_MAXIMUM_BRIGHTNESS - 40;
+        // TODO duplicate code
+
+        uint8_t clamp_reduce_bright = rgb_matrix_get_val() - 40;
+
+        if(RGBLIGHT_LED_COUNT > 58){
+            clamp_reduce_bright -= 40; // further reduce brightness because of underglow
+        }
+        
+        rgb.r     = (rgb.r * clamp_reduce_bright) / RGB_MATRIX_MAXIMUM_BRIGHTNESS;
+        rgb.g     = (rgb.g * clamp_reduce_bright) / RGB_MATRIX_MAXIMUM_BRIGHTNESS;
+        rgb.b     = (rgb.b * clamp_reduce_bright) / RGB_MATRIX_MAXIMUM_BRIGHTNESS;
+
 
         rgb_matrix_set_color(i, rgb.r, rgb.g, rgb.b);
     }
@@ -84,22 +94,16 @@ bool rgb_matrix_indicators_advanced_argos(uint8_t led_min, uint8_t led_max) {
             if (argos_rgb_entries[index].on) {
                 if (argos_rgb_entries[index].passthrough == false) {
                     rgb_t rgb = {0, 0, 0};
-                    rgb.r     = (argos_rgb_entries[index].r * rgb_matrix_get_val()) / RGB_MATRIX_MAXIMUM_BRIGHTNESS;
-                    rgb.g     = (argos_rgb_entries[index].g * rgb_matrix_get_val()) / RGB_MATRIX_MAXIMUM_BRIGHTNESS;
-                    rgb.b     = (argos_rgb_entries[index].b * rgb_matrix_get_val()) / RGB_MATRIX_MAXIMUM_BRIGHTNESS;
 
-                    uint8_t clamp_reduce_bright = 40;
+                    uint8_t clamp_reduce_bright = rgb_matrix_get_val() - 40;
 
-                    if(RGBLIGHT_LED_COUNT > 58)
-                        clamp_reduce_bright = 80; // further reduce brightness because of underglow
-
-                    // clamp, otherwise bugs out at high brightness
-                    if(rgb.r > RGB_MATRIX_MAXIMUM_BRIGHTNESS - clamp_reduce_bright) 
-                        rgb.r = RGB_MATRIX_MAXIMUM_BRIGHTNESS - clamp_reduce_bright;
-                    if(rgb.g > RGB_MATRIX_MAXIMUM_BRIGHTNESS - clamp_reduce_bright) 
-                        rgb.g = RGB_MATRIX_MAXIMUM_BRIGHTNESS - clamp_reduce_bright;
-                    if(rgb.b > RGB_MATRIX_MAXIMUM_BRIGHTNESS - clamp_reduce_bright) 
-                        rgb.b = RGB_MATRIX_MAXIMUM_BRIGHTNESS - clamp_reduce_bright;
+                    if(RGBLIGHT_LED_COUNT > 58){
+                        clamp_reduce_bright -= 40; // further reduce brightness because of underglow
+                    }
+                    
+                    rgb.r     = (argos_rgb_entries[index].r * clamp_reduce_bright) / RGB_MATRIX_MAXIMUM_BRIGHTNESS;
+                    rgb.g     = (argos_rgb_entries[index].g * clamp_reduce_bright) / RGB_MATRIX_MAXIMUM_BRIGHTNESS;
+                    rgb.b     = (argos_rgb_entries[index].b * clamp_reduce_bright) / RGB_MATRIX_MAXIMUM_BRIGHTNESS;
 
                     rgb_matrix_set_color(i, rgb.r, rgb.g, rgb.b);
                 }
