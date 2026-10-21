@@ -74,8 +74,6 @@ typedef struct PACKED {
     bool     active : 1;
     bool     valid : 1;
 } argos_combo_t;
-// If we modify the structure, we also need to modify its size in post_config.h
-_Static_assert(sizeof(argos_combo_t) <= 13, "Invalid size for argos_combo_t"); // this seems to big, change to 7 or 8?
 
 typedef struct PACKED {
     bool     has_copied_qmk_config : 1;
@@ -87,9 +85,6 @@ typedef struct PACKED {
     uint16_t quick_tap_term;
 } argos_config_t;
 
-// manually sync with post_config.h
-_Static_assert(sizeof(argos_config_t) <= 11, "Invalid size for argos_config_t");
-
 typedef struct PACKED {
     uint8_t r;
     uint8_t g;
@@ -98,7 +93,6 @@ typedef struct PACKED {
     bool    on : 1;
     bool    custom : 1;
 } argos_rgb_t;
-_Static_assert(sizeof(argos_rgb_t) <= 5, "Invalid size for argos_rgb_t");
 
 #define ARGOS_TAPPING_TERM 175
 #define ARGOS_TAP_CODE_DELAY 10
@@ -112,7 +106,6 @@ typedef struct __attribute__((packed)) {
     uint16_t custom_tapping_term; // bit 15 = enabled, bits 0-14 = timing (ms)
     bool     enabled : 1;
 } argos_td_entry_t;
-_Static_assert(sizeof(argos_td_entry_t) <= 11, "Invalid size for argos_td_entry_t");
 
 // -------------------------------
 

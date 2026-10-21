@@ -64,8 +64,8 @@ typedef union {
         bool    auto_mouse_layer_enabled : 1;
         bool    auto_precision_on_mouse_layer_enabled : 1;
         bool    has_copied_qmk_config : 1;
-        bkpd_mode_t modes_config[MODE_LAST];
-        bkpd_pointing_mode_custom_t custom_modes_config[BKPD_AMOUNT_CUSTOM_MODES];
+        bkpd_mode_t modes_config[MODE_CUSTOM1 - 1]; // last "standard" mode is right before first custom mode 
+        bkpd_pointing_mode_custom_t custom_modes_config[BKPD_AMOUNT_CUSTOM_MODES - 1]; // 0-indexed
         uint8_t active_mode;
         uint16_t auto_mouse_time;
     } __attribute__((packed));
