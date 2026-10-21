@@ -27,7 +27,7 @@
 
 // Do we have a pointing device? Then we want to save some memory for it.
 #ifdef BK_HAS_POINTING_DEVICE
-#    define ARGOS_SIZE_POINTER_CONFIG 92
+#    define ARGOS_SIZE_POINTER_CONFIG 142
 #    define ARGOS_OFFSET_POINTER_CONFIG (ARGOS_OFFSET_LED_MATRIX_CONFIG + ARGOS_SIZE_LED_MATRIX_CONFIG)
 #    define ARGOS_OFFSET_CONFIG (ARGOS_OFFSET_POINTER_CONFIG + ARGOS_SIZE_POINTER_CONFIG)
 _Static_assert(sizeof(bkpd_config_t) == ARGOS_SIZE_POINTER_CONFIG, "Pointer config size does not match expected size");
@@ -41,7 +41,7 @@ _Static_assert(sizeof(argos_config_t) == ARGOS_SIZE_CONFIG, "Invalid size for ar
 
 #define ARGOS_OFFSET_COMBO (ARGOS_OFFSET_CONFIG + ARGOS_SIZE_CONFIG)
 #define ARGOS_COMBO_ENTRIES 24 // this was already defined in argos.h, TODO fix this hardcoding...
-#define ARGOS_SIZE_COMBO 13
+#define ARGOS_SIZE_COMBO 12
 
 // If we modify the structure, we also need to modify its size in post_config.h
 _Static_assert(sizeof(argos_combo_t) == ARGOS_SIZE_COMBO, "Invalid size for argos_combo_t"); // this seems to big, change to 7 or 8?

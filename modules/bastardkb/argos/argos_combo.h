@@ -7,6 +7,7 @@
 #include <stdbool.h>
 #include "action.h"
 #include "process_combo.h"
+#include "argos.h"
 
 // TODO move non-public functions into the c file.
 
