@@ -85,7 +85,7 @@ bool rgb_matrix_indicators_advanced_argos(uint8_t led_min, uint8_t led_max) {
         return true;
     }
 
-    const uint8_t  layer     = get_highest_layer(layer_state);
+    const uint8_t  layer = get_highest_layer(layer_state | default_layer_state);
     const uint16_t min_index = layer * RGBLIGHT_LED_COUNT;
 
     for (int i = led_min; i < led_max; i++) {
