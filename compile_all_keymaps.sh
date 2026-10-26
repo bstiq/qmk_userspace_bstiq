@@ -1,6 +1,6 @@
 dos2unix compile_all_keymaps.sh
 cd ../bastardkb-qmk
-git switch bkb-develop
+git switch main
 qmk git-submodule
 cd ../qmk_userspace_private
 qmk compile -c -kb bastardkb/dilemma/3x5_3_procyon -km vendor
