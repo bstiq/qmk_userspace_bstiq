@@ -54,7 +54,8 @@ void argos_rgb_caps_lock_indicator_enable(uint8_t led_min, uint8_t led_max){
         uint8_t clamp_reduce_bright = rgb_matrix_get_val() - 40;
 
         if(RGBLIGHT_LED_COUNT > 58){
-            clamp_reduce_bright -= 40; // further reduce brightness because of underglow
+            if(clamp_reduce_bright > 40)
+                clamp_reduce_bright -= 40; // further reduce brightness because of underglow
         }
         
         rgb.r     = (rgb.r * clamp_reduce_bright) / RGB_MATRIX_MAXIMUM_BRIGHTNESS;
@@ -98,7 +99,8 @@ bool rgb_matrix_indicators_advanced_argos(uint8_t led_min, uint8_t led_max) {
                     uint8_t clamp_reduce_bright = rgb_matrix_get_val() - 40;
 
                     if(RGBLIGHT_LED_COUNT > 58){
-                        clamp_reduce_bright -= 40; // further reduce brightness because of underglow
+                        if(clamp_reduce_bright > 40)
+                            clamp_reduce_bright -= 40; // further reduce brightness because of underglow
                     }
                     
                     rgb.r     = (argos_rgb_entries[index].r * clamp_reduce_bright) / RGB_MATRIX_MAXIMUM_BRIGHTNESS;
