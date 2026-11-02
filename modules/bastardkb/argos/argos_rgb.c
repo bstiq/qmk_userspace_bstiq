@@ -51,7 +51,10 @@ void argos_rgb_caps_lock_indicator_enable(uint8_t led_min, uint8_t led_max){
 
         // TODO duplicate code
 
-        uint8_t clamp_reduce_bright = rgb_matrix_get_val() - 40;
+        uint8_t clamp_reduce_bright = rgb_matrix_get_val();
+        if(clamp_reduce_bright > 40)
+            clamp_reduce_bright -= 40;
+
 
         if(RGBLIGHT_LED_COUNT > 58){
             if(clamp_reduce_bright > 40)
@@ -96,7 +99,9 @@ bool rgb_matrix_indicators_advanced_argos(uint8_t led_min, uint8_t led_max) {
                 if (argos_rgb_entries[index].passthrough == false) {
                     rgb_t rgb = {0, 0, 0};
 
-                    uint8_t clamp_reduce_bright = rgb_matrix_get_val() - 40;
+                    uint8_t clamp_reduce_bright = rgb_matrix_get_val();
+                    if (clamp_reduce_bright > 40)
+                        clamp_reduce_bright -= 40;
 
                     if(RGBLIGHT_LED_COUNT > 58){
                         if(clamp_reduce_bright > 40)
