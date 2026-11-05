@@ -1,10 +1,27 @@
-// Copyright 2026 Ying Kun Zhan <ying@zhan.co.nl>
-// SPDX-License-Identifier: GPL-2.0-or-later
+/*
+ * Copyright 2026 Quentin LEBASTARD <bstkbd@gmail.com>
+*  Copyright 2026 Ying Kun Zhan <ying@zhan.co.nl>
+*  Copyright 2026 Henrik Pejer <mrpejer@gmail.com>
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Publicw License as published by
+ * the Free Software Foundation, either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ */
 
 #include QMK_KEYBOARD_H
 
 #include "led_matrix.h"
 #include "led_matrix_motion.h"
+#include "led_matrix_config.h"
 #include "argos.h"
 
 /*
@@ -38,14 +55,78 @@ static const uint8_t bklm_motion_cycle[] = {LED_MATRIX_MODULE_MOTION_CYCLE};
 #    define BKLM_MOTION_CYCLE_AT(i) ((i) < BKLM_MOTION_STYLE_COUNT ? (i) : BKLM_MOTION_USER + (i) - BKLM_MOTION_STYLE_COUNT)
 #endif
 
-uint8_t bklm_motion_cycle_next(uint8_t style, bool backwards) {
-    const uint8_t n = BKLM_MOTION_CYCLE_LEN;
-    uint8_t       i = 0;
-    while (i < n && BKLM_MOTION_CYCLE_AT(i) != style) i++;
-    if (i == n) {
-        return BKLM_MOTION_CYCLE_AT(0);
+#define BKLM_ALL_STYLES (BKLM_MOTION_STYLE_COUNT + LED_MATRIX_MODULE_MOTION_USER_COUNT)
+#define BKLM_ALL_AT(i) ((i) < BKLM_MOTION_STYLE_COUNT ? (i) : BKLM_MOTION_USER + (i) - BKLM_MOTION_STYLE_COUNT)
+
+static bool bklm_in_compiled_cycle(uint8_t style) {
+    for (uint8_t i = 0; i < BKLM_MOTION_CYCLE_LEN; i++) {
+        if (BKLM_MOTION_CYCLE_AT(i) == style) return true;
     }
-    return BKLM_MOTION_CYCLE_AT((i + (backwards ? n - 1 : 1)) % n);
+    return false;
+}
+
+int8_t bklm_cycle_bit(uint8_t style) {
+    if (style < BKLM_MOTION_STYLE_COUNT && style < 12) return (int8_t)style;
+    if (style >= BKLM_MOTION_USER && style - BKLM_MOTION_USER < 4) return (int8_t)(12 + style - BKLM_MOTION_USER);
+    return -1;
+}
+
+uint16_t bklm_cycle_existing(void) {
+    uint16_t bits = 0;
+    for (uint8_t i = 0; i < BKLM_ALL_STYLES; i++) {
+        const int8_t bit = bklm_cycle_bit(BKLM_ALL_AT(i));
+        if (bit >= 0) bits |= 1u << bit;
+    }
+    return bits;
+}
+
+uint16_t bklm_cycle_report(void) {
+    const uint16_t existing = bklm_cycle_existing();
+    if (bklm_cycle_mask == 0) {
+        uint16_t bits = 0;
+        for (uint8_t i = 0; i < BKLM_MOTION_CYCLE_LEN; i++) {
+            const int8_t bit = bklm_cycle_bit(BKLM_MOTION_CYCLE_AT(i));
+            if (bit >= 0) bits |= 1u << bit;
+        }
+        return bits ? bits : existing;
+    }
+    return (bklm_cycle_mask & existing) ? bklm_cycle_mask & existing : existing;
+}
+
+/* In rotation: by the setting, or by the compiled cycle while there is none.
+ * A setting that leaves nothing in rotation counts as everything. */
+static bool bklm_in_rotation(uint8_t style, bool everything) {
+    if (everything) return true;
+    if (bklm_cycle_mask == 0) return bklm_in_compiled_cycle(style);
+    const int8_t bit = bklm_cycle_bit(style);
+    return bit < 0 || (bklm_cycle_mask >> bit & 1);
+}
+
+/* LM_ANIM's order: the compiled cycle, then every other style, so a style
+ * switched on at runtime has a place even if the keymap left it out. The
+ * rotation is the styles in it that are in rotation. The current style keeps
+ * its place even when it is not in rotation itself. */
+uint8_t bklm_motion_cycle_next(uint8_t style, bool backwards) {
+    uint8_t order[BKLM_MOTION_CYCLE_LEN + BKLM_ALL_STYLES];
+    uint8_t n = 0;
+    for (uint8_t i = 0; i < BKLM_MOTION_CYCLE_LEN; i++) order[n++] = BKLM_MOTION_CYCLE_AT(i);
+    for (uint8_t i = 0; i < BKLM_ALL_STYLES; i++) {
+        if (!bklm_in_compiled_cycle(BKLM_ALL_AT(i))) order[n++] = BKLM_ALL_AT(i);
+    }
+
+    bool everything = true;
+    for (uint8_t i = 0; i < n; i++) {
+        if (bklm_motion_style_valid(order[i]) && bklm_in_rotation(order[i], false)) everything = false;
+    }
+
+    uint8_t i = 0;
+    while (i < n && order[i] != style) i++;
+    if (i == n) i = backwards ? 0 : n - 1; /* not in the order: start from its edge */
+    for (uint8_t step = 0; step < n; step++) {
+        i = (i + (backwards ? n - 1 : 1)) % n;
+        if (bklm_motion_style_valid(order[i]) && bklm_in_rotation(order[i], everything)) return order[i];
+    }
+    return style;
 }
 
 const char *bklm_motion_style_name(uint8_t style) {
@@ -139,10 +220,12 @@ static uint32_t bklm_still_ms(void) {
 }
 
 /* When the idle animation stops, counted from the last motion. */
-#define BKLM_IDLE_END_MS (LED_MATRIX_MODULE_MOTION_HOLD_MS + LED_MATRIX_MODULE_MOTION_FADE_MS + LED_MATRIX_MODULE_MOTION_IDLE_MS)
+static uint32_t bklm_idle_end_ms(void) {
+    return LED_MATRIX_MODULE_MOTION_HOLD_MS + LED_MATRIX_MODULE_MOTION_FADE_MS + bklm_idle_ms();
+}
 
 static bool bklm_idling(void) {
-    return LED_MATRIX_MODULE_MOTION_IDLE && (LED_MATRIX_MODULE_MOTION_IDLE_MS == 0 || bklm_still_ms() < BKLM_IDLE_END_MS);
+    return bklm_idle_enabled() && (bklm_idle_ms() == 0 || bklm_still_ms() < bklm_idle_end_ms());
 }
 
 bool bklm_motion_active(void) {
@@ -295,15 +378,15 @@ bool bklm_draw_motion(RGB *pixels) {
 
     const uint32_t still = bklm_still_ms();
     uint32_t       fade  = 255;
-    if (!LED_MATRIX_MODULE_MOTION_IDLE && still > LED_MATRIX_MODULE_MOTION_HOLD_MS && bklm_moving_window()) {
+    if (!bklm_idle_enabled() && still > LED_MATRIX_MODULE_MOTION_HOLD_MS && bklm_moving_window()) {
         fade = 255 * (LED_MATRIX_MODULE_MOTION_HOLD_MS + LED_MATRIX_MODULE_MOTION_FADE_MS - still) / LED_MATRIX_MODULE_MOTION_FADE_MS;
     }
     /* An idle animation with an end fades out over its last FADE_MS. */
-    if (idle && LED_MATRIX_MODULE_MOTION_IDLE_MS && still > BKLM_IDLE_END_MS - LED_MATRIX_MODULE_MOTION_FADE_MS) {
-        fade = 255 * (BKLM_IDLE_END_MS - still) / LED_MATRIX_MODULE_MOTION_FADE_MS;
+    if (idle && bklm_idle_ms() && still > bklm_idle_end_ms() - LED_MATRIX_MODULE_MOTION_FADE_MS) {
+        fade = 255 * (bklm_idle_end_ms() - still) / LED_MATRIX_MODULE_MOTION_FADE_MS;
     }
     /* A lingering style fades over the end of its linger instead. */
-    if (!LED_MATRIX_MODULE_MOTION_IDLE && bklm_lingering()) {
+    if (!bklm_idle_enabled() && bklm_lingering()) {
         const uint32_t left       = bklm_left(bklm_linger_start, &bklm_linger_ms);
         const uint32_t fade_after = left >= LED_MATRIX_MODULE_MOTION_FADE_MS ? 255 : 255 * left / LED_MATRIX_MODULE_MOTION_FADE_MS;
         fade                      = MAX(bklm_moving_window() ? fade : 0, fade_after);

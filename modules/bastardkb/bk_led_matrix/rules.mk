@@ -5,6 +5,7 @@ SRC += led_matrix_layers.c
 SRC += led_matrix_mods.c
 SRC += led_matrix_duck.c
 SRC += led_matrix_motion.c
+SRC += led_matrix_config.c
 SRC += led_matrix_motion_sparks.c
 SRC += led_matrix_motion_fireworks.c
 SRC += led_matrix_motion_ocean.c

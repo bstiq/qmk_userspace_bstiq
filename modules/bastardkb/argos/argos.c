@@ -42,6 +42,10 @@
 #include "bk_pointing_device.h"
 #endif
 
+#ifdef COMMUNITY_MODULE_BK_LED_MATRIX_ENABLE
+#include "led_matrix_config.h"
+#endif
+
 ASSERT_COMMUNITY_MODULES_MIN_API_VERSION(1, 0, 0);
 
 // Magic position for keycode execution
@@ -404,8 +408,15 @@ bool argos_handle_command(uint8_t* data, uint8_t length) {
 
             break;
         }
-
 #endif // BK_HAS_POINTING_DEVICE
+
+#ifdef COMMUNITY_MODULE_BK_LED_MATRIX_ENABLE
+        case argos_id_led_matrix: {
+            send_data = bklm_dispatch_command(command_data);
+            break;
+        }
+#endif // COMMUNITY_MODULE_BK_LED_MATRIX_ENABLE
+
 
         default:
             return false;

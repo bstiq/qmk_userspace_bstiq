@@ -1,6 +1,21 @@
-// Copyright 2026 Quentin LEBASTARD <bstkbd@gmail.com>
-// Copyright 2026 Ying Kun Zhan <ying@zhan.co.nl>
-// SPDX-License-Identifier: GPL-2.0-or-later
+/*
+ * Copyright 2026 Quentin LEBASTARD <bstkbd@gmail.com>
+*  Copyright 2026 Ying Kun Zhan <ying@zhan.co.nl>
+*  Copyright 2026 Henrik Pejer <mrpejer@gmail.com>
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Publicw License as published by
+ * the Free Software Foundation, either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ */
 
 #include QMK_KEYBOARD_H
 
@@ -10,10 +25,12 @@
 #include "led_matrix_mods.h"
 #include "led_matrix_pointer.h"
 #include "led_matrix_motion.h"
+#include "led_matrix_config.h"
 #include "led_matrix_layer_anims.h"
 #include "led_matrix_pointer_anims.h"
 #include "transactions.h"
 #include "introspection.h"
+
 #ifdef COMMUNITY_MODULE_BK_POINTING_DEVICE_ENABLE
 #    include "bk_pointing_modes.h"
 #endif
@@ -46,15 +63,9 @@ bool process_record_bk_led_matrix(uint16_t keycode, keyrecord_t *record) {
 }
 
 /* bk_pointing_device keeps its mode on the USB half only, so that half sends it
- * to the panel half, along with activity, trackball motion and the animation. */
+ * to the panel half, along with activity, trackball motion, the animation and
+ * the timeouts (bklm_sync_t, in led_matrix.h). */
 static uint8_t bklm_synced_pointer_mode;
-
-typedef struct __attribute__((packed)) {
-    uint8_t mode;
-    uint8_t activity;
-    uint8_t style; /* trackball animation, picked with LED_MATRIX_ANIMATION_NEXT */
-    int16_t dx, dy; /* motion since the last delivered message */
-} bklm_sync_t;
 
 static int32_t bklm_motion_x, bklm_motion_y; /* USB half: not yet delivered */
 
@@ -95,6 +106,7 @@ uint8_t bklm_pointer_mode(void) {
 
 static void bklm_sync_handler(uint8_t in_len, const void *in_data, uint8_t out_len, void *out_data) {
     static uint8_t last_activity;
+    static uint8_t last_save_seq;
     static bool    first = true;
     if (in_len == sizeof(bklm_sync_t)) {
         const bklm_sync_t *msg   = (const bklm_sync_t *)in_data;
@@ -104,7 +116,14 @@ static void bklm_sync_handler(uint8_t in_len, const void *in_data, uint8_t out_l
         if (msg->style != bklm_motion_style) {
             bklm_motion_style_set(msg->style, !first);
         }
-        first = false;
+        // Follow the settings at once; save them only when the USB half saved,
+        // not because this half just powered on next to different values.
+        bklm_config_adopt(msg->off_s, msg->dim_s, msg->idle_cfg, msg->cycle_mask);
+        if (!first && msg->save_seq != last_save_seq) {
+            bklm_config_save();
+        }
+        last_save_seq = msg->save_seq;
+        first         = false;
         if (msg->activity != last_activity) {
             last_activity      = msg->activity;
             bklm_last_input_ms = timer_read32();
@@ -118,6 +137,11 @@ static void bklm_sync_task(void) {
     static uint8_t  sent_mode     = 0xFF;
     static uint8_t  sent_activity = 0;
     static uint8_t  sent_style    = 0xFF;
+    static uint8_t  sent_off      = 0xFF;
+    static uint8_t  sent_dim      = 0xFF;
+    static uint8_t  sent_seq      = 0;
+    static uint8_t  sent_idle     = 0xFF;
+    static uint16_t sent_mask     = 0xFFFF;
     static uint32_t last_sent     = 0;
     const uint32_t  elapsed       = timer_elapsed32(last_sent);
 #ifdef COMMUNITY_MODULE_BK_POINTING_DEVICE_ENABLE
@@ -125,7 +149,9 @@ static void bklm_sync_task(void) {
 #else
     const uint8_t mode = 0;
 #endif
-    const bool changed = mode != sent_mode || bklm_activity != sent_activity || bklm_motion_style != sent_style;
+    const bool changed = mode != sent_mode || bklm_activity != sent_activity || bklm_motion_style != sent_style ||
+                         bklm_off_s != sent_off || bklm_dim_s != sent_dim || bklm_save_seq != sent_seq ||
+                         bklm_idle_cfg != sent_idle || bklm_cycle_mask != sent_mask;
     const bool moving  = bklm_motion_x != 0 || bklm_motion_y != 0;
 
     // Changes go out at once, motion in batches, a refresh every SYNC_MS;
@@ -136,11 +162,16 @@ static void bklm_sync_task(void) {
         return;
     }
     const bklm_sync_t msg = {
-        .mode     = mode,
-        .activity = bklm_activity,
-        .style    = bklm_motion_style,
-        .dx       = (int16_t)CONSTRAIN(bklm_motion_x, INT16_MIN, INT16_MAX),
-        .dy       = (int16_t)CONSTRAIN(bklm_motion_y, INT16_MIN, INT16_MAX),
+        .mode       = mode,
+        .activity   = bklm_activity,
+        .style      = bklm_motion_style,
+        .dx         = (int16_t)CONSTRAIN(bklm_motion_x, INT16_MIN, INT16_MAX),
+        .dy         = (int16_t)CONSTRAIN(bklm_motion_y, INT16_MIN, INT16_MAX),
+        .off_s      = bklm_off_s,
+        .dim_s      = bklm_dim_s,
+        .save_seq   = bklm_save_seq,
+        .idle_cfg   = bklm_idle_cfg,
+        .cycle_mask = bklm_cycle_mask,
     };
     failed    = !transaction_rpc_send(RPC_ID_LED_MATRIX_SYNC, sizeof(msg), &msg);
     last_sent = timer_read32();
@@ -148,6 +179,11 @@ static void bklm_sync_task(void) {
         sent_mode     = msg.mode;
         sent_activity = msg.activity;
         sent_style    = msg.style;
+        sent_off      = msg.off_s;
+        sent_dim      = msg.dim_s;
+        sent_seq      = msg.save_seq;
+        sent_idle     = msg.idle_cfg;
+        sent_mask     = msg.cycle_mask;
         bklm_motion_x -= msg.dx;
         bklm_motion_y -= msg.dy;
     }
@@ -161,6 +197,7 @@ static bool bklm_on_panel_half(void) {
 void keyboard_post_init_bk_led_matrix(void) {
     bklm_last_input_ms = timer_read32();
     bklm_motion_style_load();
+    bklm_config_load();
     transaction_register_rpc(RPC_ID_LED_MATRIX_SYNC, bklm_sync_handler);
     if (bklm_on_panel_half()) {
         bklm_init();
@@ -204,8 +241,10 @@ void housekeeping_task_bk_led_matrix(void) {
 
     const uint32_t idle_ms = timer_elapsed32(bklm_last_input_ms);
 
-    if (idle_ms >= LED_MATRIX_MODULE_OFF_MS) {
-        if (strip_powered) {
+    if (idle_ms >= bklm_off_ms()) {
+        // Paced like any frame: a short off timeout can land right after one.
+        if (strip_powered && timer_elapsed32(last_update) >= LED_MATRIX_MODULE_MOTION_REFRESH_MS) {
+            last_update = timer_read32();
             memset(frame, 0, sizeof(frame));
             bklm_set_idle_brightness_divisor(1);
             bklm_show(frame);
@@ -215,7 +254,7 @@ void housekeeping_task_bk_led_matrix(void) {
     }
 
     strip_powered = true;
-    bklm_set_idle_brightness_divisor(idle_ms >= LED_MATRIX_MODULE_DIM_MS ? 2 : 1);
+    bklm_set_idle_brightness_divisor(idle_ms >= bklm_dim_ms() ? 2 : 1);
 
     const bool fast = bklm_motion_active() || bklm_pointer_anim_active(bklm_pointer_mode());
     if (timer_elapsed32(last_update) < (fast ? LED_MATRIX_MODULE_MOTION_REFRESH_MS : LED_MATRIX_MODULE_REFRESH_MS)) {
