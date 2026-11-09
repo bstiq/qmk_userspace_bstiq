@@ -23,11 +23,8 @@
 #include "argos_rgb.h"
 
 #include "eeconfig.h"
-#include "eeprom.h"
 #include "keymap_introspection.h"
 #include "introspection.h"
-#include "nvm_eeprom_eeconfig_internal.h"
-#include "nvm_eeprom_via_internal.h"
 #include "print.h"
 #include "quantum.h"
 #include "raw_hid.h"
@@ -60,26 +57,16 @@ uint16_t g_argos_magic_keycode_override = 0;
 
 argos_config_t argos_config;
 
-// Internal EEPROM access functions - uses eeconfig_kb_datablock
-// TODO does this mess with the dilemma screen configuration? It should not
+// Internal EEPROM access functions - backed by the Argos community module datablock
+// (see EECONFIG_MODULE_ARGOS_DATA_SIZE in post_config.h)
 __attribute__((weak)) void argos_read_eeprom(uint16_t offset, void* buf,
     uint16_t size) {
-    void* ee_start =
-        (void*)(uintptr_t)(DYNAMIC_KEYMAP_EEPROM_MAX_ADDR + offset);
-    void* ee_end =
-        (void*)(uintptr_t)(DYNAMIC_KEYMAP_EEPROM_MAX_ADDR +
-            MIN(ARGOS_EEPROM_SIZE_CALC, offset + size));
-    eeprom_read_block(buf, ee_start, ee_end - ee_start);
+    eeconfig_read_argos_datablock(buf, offset, size);
 }
 
 __attribute__((weak)) void argos_write_eeprom(uint16_t offset, const void* buf,
     uint16_t size) {
-    void* ee_start =
-        (void*)(uintptr_t)(DYNAMIC_KEYMAP_EEPROM_MAX_ADDR + offset);
-    void* ee_end =
-        (void*)(uintptr_t)(DYNAMIC_KEYMAP_EEPROM_MAX_ADDR +
-            MIN(ARGOS_EEPROM_SIZE_CALC, offset + size));
-    eeprom_update_block(buf, ee_start, ee_end - ee_start);
+    eeconfig_update_argos_datablock(buf, offset, size);
 }
 
 /*
