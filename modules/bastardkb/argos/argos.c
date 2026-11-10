@@ -35,6 +35,8 @@
 #include <string.h>
 #include <time.h>
 
+#include "transactions.h"
+
 #if BK_HAS_POINTING_DEVICE
 #include "bk_pointing_device.h"
 #endif
@@ -56,6 +58,22 @@ layer_state_t LO_layer_state = 0;
 uint16_t g_argos_magic_keycode_override = 0;
 
 argos_config_t argos_config;
+
+// Build ID: a pseudo-random uint16_t that changes at each compilation.
+// It is seeded from the compiler's __DATE__/__TIME__ macros, so no build
+// system changes are needed and the value is regenerated every time this
+// file is recompiled.
+
+static bool has_same_firmware_id = false;
+static bool has_synced_firmware_id = false;
+static uint16_t argos_generate_build_id(void) {
+    const char* signature = __DATE__ " " __TIME__;
+    uint16_t    hash      = 0x2F1B;
+    while (*signature) {
+        hash = (uint16_t)(hash * 31 + (uint8_t)*signature++);
+    }
+    return hash;
+}
 
 // Internal EEPROM access functions - backed by the Argos community module datablock
 // (see EECONFIG_MODULE_ARGOS_DATA_SIZE in post_config.h)
@@ -88,6 +106,7 @@ void keyboard_post_init_argos(void) {
         argos_config.global_combo_term = COMBO_TERM;
         argos_config.flow_tap_term = FLOW_TAP_TERM;
         argos_config.quick_tap_term = QUICK_TAP_TERM;
+        argos_config.build_id = argos_generate_build_id();
         argos_write_eeprom(ARGOS_OFFSET_CONFIG, &argos_config,
             sizeof(argos_config));
 #if defined(RGBLIGHT_ENABLE) || defined(RGB_MATRIX_ENABLE)
@@ -101,12 +120,13 @@ void keyboard_post_init_argos(void) {
     argos_rgb_load_from_eeprom();
     // for rgb sync, needed for propagating changes
     transaction_register_rpc(RPC_ID_RGB_SYNC, rgb_sync_handler);
+    // to make sure both sides have the same build id
+    transaction_register_rpc(RPC_ID_BUILD_ID_SYNC, argos_build_id_sync_handler);
 #endif
 }
 
 bool argos_handle_command(uint8_t* data, uint8_t length) {
     uint8_t protocol = data[0];
-
 
     if (protocol != ARGOS_CMD_PREFIX)
         return false; // not an Argos command
@@ -568,4 +588,96 @@ uint16_t get_flow_tap_term(uint16_t keycode, keyrecord_t* record,
 // Custom quick tap term management
 uint16_t get_quick_tap_term(uint16_t keycode, keyrecord_t *record) {
     return argos_config.quick_tap_term;
+}
+
+// --------------------------------------------
+// Build ID sync
+
+bool process_record_argos(uint16_t keycode, keyrecord_t* record) {
+    if(!has_synced_firmware_id) {
+        // connected standalone, or hasn't synced yet
+        // we allow key presses
+        return true;
+    }
+    if(!has_same_firmware_id) {
+        printf("Not synced, ignoring keypresses\n");
+        // we don't allow any keypresses until the build id is synced
+        return false;
+    }
+    return true;
+}
+
+// firwmare id sync
+void housekeeping_task_argos(void) {
+    static uint8_t retries = 0;
+    if (is_keyboard_master()) {
+        if (!has_synced_firmware_id && retries < 10){
+            static uint32_t last_sync = 0;
+            if (timer_elapsed32(last_sync) > 250) {
+                // send our build id to the other side
+                uint16_t build_id = argos_config.build_id;
+                uint16_t data_out[] = { build_id };
+                uint16_t data_in[] = { 0 };
+                if (transaction_rpc_exec(RPC_ID_BUILD_ID_SYNC, sizeof(data_out), data_out, sizeof(data_in), data_in)) {
+                    has_synced_firmware_id = true;
+                    if(data_in[0] == 1) {
+                        has_same_firmware_id = true;
+                    }
+                    else {
+                        has_same_firmware_id = false;
+                    }
+                }
+                else{
+                    retries ++;
+                    last_sync = timer_read32();
+                }
+            }
+        }
+        
+        // if we did too many retries, keyboard might be in standalone mode
+        // so, only set rgb effects if we did get a response, and the build ids are different 
+        else if (has_synced_firmware_id && !has_same_firmware_id) {
+            static bool has_displayed_error = false;
+            if (!has_displayed_error) {
+                // if we don't have the same firmware id, we need to stop everything and display an error
+                rgb_matrix_mode_noeeprom(RGB_MATRIX_BREATHING);
+                rgb_matrix_sethsv_noeeprom(HSV_RED);
+                rgb_matrix_set_speed_noeeprom(255);
+            }
+            has_displayed_error = true;
+        }
+    }
+}
+
+// secondary side
+void argos_build_id_sync_handler(uint8_t initiator2target_buffer_size, const void* initiator2target_buffer, uint8_t target2initiator_buffer_size, void* target2initiator_buffer) {
+    if (!is_keyboard_master() && !has_synced_firmware_id) {
+        uint16_t* data = (uint16_t*)initiator2target_buffer;
+        uint16_t  build_id = data[0];
+        if(build_id == argos_config.build_id) {
+            has_same_firmware_id = true;
+        }
+        else {
+            has_same_firmware_id = false;
+        }
+        has_synced_firmware_id = true;
+        
+        // return result
+        uint8_t* reply = (uint8_t*)target2initiator_buffer;
+        reply[0] = has_same_firmware_id ? 1 : 0;
+
+        if (!has_same_firmware_id) {
+            // if we don't have the same firmware id, we need to stop everything and display an error
+            rgb_matrix_mode(RGB_MATRIX_BREATHING);
+            rgb_matrix_sethsv_noeeprom(HSV_RED);
+            rgb_matrix_set_speed_noeeprom(255);
+        }
+    }
+}
+
+bool argos_sides_have_different_firmware_id(void) {
+    if(!has_synced_firmware_id) {
+        return false; // we don't know yet
+    }
+    return has_same_firmware_id;
 }

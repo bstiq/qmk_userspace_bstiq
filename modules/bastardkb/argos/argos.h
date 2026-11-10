@@ -84,6 +84,7 @@ typedef struct PACKED {
     uint16_t global_combo_term;   // in ms
     uint16_t flow_tap_term;
     uint16_t quick_tap_term;
+    uint16_t build_id;
 } argos_config_t;
 
 typedef struct PACKED {
@@ -121,3 +122,5 @@ void                       argos_keycode_tap(uint16_t keycode);
 bool                       argos_tap_dance_read_eeprom(uint8_t index, argos_td_entry_t *entry);
 bool                       argos_tap_dance_write_eeprom(uint8_t index, const argos_td_entry_t *entry);
 bool argos_dispatch_command_terms(uint8_t* command_id, uint8_t* command_data);
+void argos_build_id_sync_handler(uint8_t initiator2target_buffer_size, const void* initiator2target_buffer, uint8_t target2initiator_buffer_size, void* target2initiator_buffer);
+bool argos_sides_have_different_firmware_id(void);
