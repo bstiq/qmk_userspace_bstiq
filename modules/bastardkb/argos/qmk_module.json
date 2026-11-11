@@ -5,10 +5,5 @@
     "features": {
         "via": true,
         "deferred_exec": true
-    },
-    "eeprom": {
-        "wear_leveling": {
-            "backing_size": 131072
-        }
     }
 }

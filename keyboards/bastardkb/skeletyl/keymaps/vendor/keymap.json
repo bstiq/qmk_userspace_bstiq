@@ -1,5 +1,6 @@
 {
     "modules": [
-        "bastardkb/argos"
+        "bastardkb/argos",
+        "bastardkb/bk_split_flash"
     ]
 }

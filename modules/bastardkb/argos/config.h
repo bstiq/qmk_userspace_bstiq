@@ -39,7 +39,8 @@
 #define DYNAMIC_KEYMAP_MACRO_DELAY 8
 
 // More available live storage! Useful for tap dances and RGB
-// Also, better read write endurance
+// Also, better read write endurance: a larger backing store spreads writes
+// across more flash, extending life over the same logical size.
 #define WEAR_LEVELING_LOGICAL_SIZE 65536
 #define WEAR_LEVELING_BACKING_SIZE (WEAR_LEVELING_LOGICAL_SIZE * 4)
 

@@ -84,7 +84,6 @@ typedef struct PACKED {
     uint16_t global_combo_term;   // in ms
     uint16_t flow_tap_term;
     uint16_t quick_tap_term;
-    uint16_t build_id;
 } argos_config_t;
 
 typedef struct PACKED {

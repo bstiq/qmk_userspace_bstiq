@@ -106,7 +106,6 @@ void keyboard_post_init_argos(void) {
         argos_config.global_combo_term = COMBO_TERM;
         argos_config.flow_tap_term = FLOW_TAP_TERM;
         argos_config.quick_tap_term = QUICK_TAP_TERM;
-        argos_config.build_id = argos_generate_build_id();
         argos_write_eeprom(ARGOS_OFFSET_CONFIG, &argos_config,
             sizeof(argos_config));
 #if defined(RGBLIGHT_ENABLE) || defined(RGB_MATRIX_ENABLE)
@@ -615,7 +614,7 @@ void housekeeping_task_argos(void) {
             static uint32_t last_sync = 0;
             if (timer_elapsed32(last_sync) > 250) {
                 // send our build id to the other side
-                uint16_t build_id = argos_config.build_id;
+                uint16_t build_id = argos_generate_build_id();
                 uint16_t data_out[] = { build_id };
                 uint16_t data_in[] = { 0 };
                 if (transaction_rpc_exec(RPC_ID_BUILD_ID_SYNC, sizeof(data_out), data_out, sizeof(data_in), data_in)) {
@@ -654,7 +653,7 @@ void argos_build_id_sync_handler(uint8_t initiator2target_buffer_size, const voi
     if (!is_keyboard_master() && !has_synced_firmware_id) {
         uint16_t* data = (uint16_t*)initiator2target_buffer;
         uint16_t  build_id = data[0];
-        if(build_id == argos_config.build_id) {
+        if (build_id == argos_generate_build_id()) {
             has_same_firmware_id = true;
         }
         else {
