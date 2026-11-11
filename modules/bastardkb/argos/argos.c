@@ -593,6 +593,14 @@ uint16_t get_quick_tap_term(uint16_t keycode, keyrecord_t *record) {
 // Build ID sync
 
 bool process_record_argos(uint16_t keycode, keyrecord_t* record) {
+#ifdef ARGOS_DISABLE_BUILD_ID_GATE
+    // Bring-up escape hatch (e.g. flashing the two halves of a dev board one at
+    // a time): keep typing even when the halves run different builds, instead of
+    // blocking every key until the firmware ids match.
+    (void)keycode;
+    (void)record;
+    return true;
+#else
     if(!has_synced_firmware_id) {
         // connected standalone, or hasn't synced yet
         // we allow key presses
@@ -604,6 +612,7 @@ bool process_record_argos(uint16_t keycode, keyrecord_t* record) {
         return false;
     }
     return true;
+#endif
 }
 
 // firwmare id sync
@@ -635,6 +644,7 @@ void housekeeping_task_argos(void) {
         
         // if we did too many retries, keyboard might be in standalone mode
         // so, only set rgb effects if we did get a response, and the build ids are different 
+#ifndef ARGOS_DISABLE_BUILD_ID_GATE
         else if (has_synced_firmware_id && !has_same_firmware_id) {
             static bool has_displayed_error = false;
             if (!has_displayed_error) {
@@ -645,6 +655,7 @@ void housekeeping_task_argos(void) {
             }
             has_displayed_error = true;
         }
+#endif
     }
 }
 
@@ -665,12 +676,14 @@ void argos_build_id_sync_handler(uint8_t initiator2target_buffer_size, const voi
         uint8_t* reply = (uint8_t*)target2initiator_buffer;
         reply[0] = has_same_firmware_id ? 1 : 0;
 
+#ifndef ARGOS_DISABLE_BUILD_ID_GATE
         if (!has_same_firmware_id) {
             // if we don't have the same firmware id, we need to stop everything and display an error
             rgb_matrix_mode(RGB_MATRIX_BREATHING);
             rgb_matrix_sethsv_noeeprom(HSV_RED);
             rgb_matrix_set_speed_noeeprom(255);
         }
+#endif
     }
 }
 

@@ -11,16 +11,19 @@
 // 32-byte M2S/S2M buffers). This is the control plane only; image bytes move in
 // later parts.
 
-#define BKSF_PROTO_VERSION 1
+#define BKSF_PROTO_VERSION 2
 
-#define BKSF_MSG_DATA_SIZE 24
+// Payload bytes in one message. Sized so `bksf_msg_t` is exactly 32 bytes (the
+// default split RPC buffer): version+cmd+status+len (4) + value (4) + crc (4) +
+// data (20). The CRC field (added in v2 for T4.3) costs 4 payload bytes.
+#define BKSF_MSG_DATA_SIZE 20
 
 typedef enum {
     BKSF_CMD_NONE = 0,
     BKSF_CMD_ARM,      // master -> slave: arm (invalidate boot2), reply ARMED
     BKSF_CMD_ARMED,    // slave -> master
     BKSF_CMD_BEGIN,    // master -> slave: image size in `value`, CRC in `data`
-    BKSF_CMD_CHUNK,    // master -> slave: offset in `value`, `len` image bytes in `data`
+    BKSF_CMD_CHUNK,    // master -> slave: offset in `value`, `len` bytes in `data`, CRC32 of those bytes in `crc`
     BKSF_CMD_ACK,      // slave -> master: ready / bytes received in `value`
     BKSF_CMD_NACK,     // slave -> master: refused/again
     BKSF_CMD_VERIFY,   // master -> slave: whole-image CRC in `value`
@@ -43,10 +46,11 @@ typedef struct __attribute__((packed)) {
     uint8_t  status;  // BKSF_ST_*
     uint8_t  len;     // bytes used in `data`
     uint32_t value;   // generic field (size, offset, CRC, ...)
+    uint32_t crc;     // BKSF_CMD_CHUNK: CRC32 over `data[0..len-1]`; else unused
     uint8_t  data[BKSF_MSG_DATA_SIZE];
 } bksf_msg_t;
 
-_Static_assert(sizeof(bksf_msg_t) == BKSF_MSG_DATA_SIZE + 8, "bksf_msg_t must be 32 bytes to fit the RPC buffer");
+_Static_assert(sizeof(bksf_msg_t) == 32, "bksf_msg_t must be 32 bytes to fit the RPC buffer");
 
 // Image bytes carried by one BKSF_CMD_CHUNK message.
 #define BKSF_CHUNK_DATA_SIZE BKSF_MSG_DATA_SIZE

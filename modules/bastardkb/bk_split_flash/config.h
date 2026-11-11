@@ -45,6 +45,21 @@
 #    define BKSF_TEST BKSF_TEST_DUMP
 #endif
 
+// T4.3 link-integrity test. Deliberately corrupt the payload of one chunk on
+// the master *after* its CRC32 is computed, so the slave's per-chunk CRC check
+// fails and it NACKs; the master must then re-send the same offset.
+//   BKSF_CORRUPT_OFF  : image offset of the chunk to corrupt (0 = disabled).
+//   BKSF_CORRUPT_MODE : 1 = corrupt only the first attempt (the retry then
+//                       succeeds -> the update still completes and commits);
+//                       2 = corrupt every attempt (the master exhausts its
+//                       retries and aborts -> the update must never commit).
+#ifndef BKSF_CORRUPT_OFF
+#    define BKSF_CORRUPT_OFF 0u
+#endif
+#ifndef BKSF_CORRUPT_MODE
+#    define BKSF_CORRUPT_MODE 1
+#endif
+
 // Split RPC: the module owns one transaction id. The build's generated
 // community-module post-config auto-defines SPLIT_TRANSACTION_RPC when this is
 // present, and the generated split_transaction_id_community_modules.inc adds it
