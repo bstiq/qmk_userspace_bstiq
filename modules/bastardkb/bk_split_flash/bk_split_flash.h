@@ -37,3 +37,9 @@ void bksf_start_handshake(void); // master: begin ARM -> ARMED, driven by housek
 // Part 4: master streams the const peer image to the slave (ARM -> BEGIN ->
 // chunks -> VERIFY -> COMMIT), driven by housekeeping.
 void bksf_start_slave_update(void);
+
+// Part 5 (T5.1): like bksf_start_slave_update(), but after the slave rejoins the
+// master self-flashes the same peer image last (T2.5 path) and resets, so a
+// single trigger updates both halves. Driven by housekeeping; does not return
+// once the master's own apply begins.
+void bksf_start_both_update(void);

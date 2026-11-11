@@ -74,6 +74,10 @@ static void bksf_run_test(void) {
     // T4: master streams the peer image into the slave's staging, verifies, and
     // the slave commits (reboots into the peer build). Housekeeping drives it.
     bksf_start_slave_update();
+#elif BKSF_TEST == BKSF_TEST_UPDATE_BOTH
+    // T5: update the slave first, then the master self-flashes the same peer
+    // image last, so one trigger updates both halves. Housekeeping drives it.
+    bksf_start_both_update();
 #endif
 }
 

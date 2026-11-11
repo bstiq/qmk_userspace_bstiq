@@ -248,6 +248,7 @@ static uint32_t       up_rejoin_deadline;
 static uint32_t       up_fail_off; // offset of the chunk whose reply was lost
 static uint8_t        up_fail_len; // its length, so RESYNC knows the target rxp_off
 static uint8_t        up_fail_tries; // attempts spent on the current offset
+static bool           up_self_flash; // T5.1: self-flash the master after REJOIN
 
 static bool bksf_rpc_send(bksf_cmd_t cmd, uint32_t value, const uint8_t *data, uint8_t len) {
     bksf_msg_t out = {.version = BKSF_PROTO_VERSION, .cmd = (uint8_t)cmd, .len = len, .value = value};
@@ -371,16 +372,17 @@ void bksf_start_handshake(void) {
     sync_deadline = timer_read32() + BKSF_RPC_TIMEOUT_MS;
 }
 
-void bksf_start_slave_update(void) {
+// Common setup for a peer-image update. Returns true if the run has started.
+static bool bksf_begin_update(void) {
     if (!is_keyboard_master()) {
         uprintf("bksf: update requested on slave (ignored)\n");
-        return;
+        return false;
     }
     const uint8_t *img = bksf_peer_image_ptr();
     uint32_t       len = bksf_peer_image_size();
     if (len == 0) {
         uprintf("bksf: no peer image compiled in\n");
-        return;
+        return false;
     }
 
     up_img = img;
@@ -392,6 +394,22 @@ void bksf_start_slave_update(void) {
     sync_state    = BKSF_SYNC_ARM;
     sync_tries    = 0;
     sync_deadline = timer_read32() + BKSF_RPC_TIMEOUT_MS;
+    return true;
+}
+
+void bksf_start_slave_update(void) {
+    up_self_flash = false;
+    (void)bksf_begin_update();
+}
+
+// T5.1: same as bksf_start_slave_update(), but the master self-flashes the peer
+// image last (after the slave has rejoined), so one trigger updates both halves.
+void bksf_start_both_update(void) {
+    up_self_flash = false;
+    if (bksf_begin_update()) {
+        up_self_flash = true;
+        uprintf("bksf: both-halves update (master self-flashes last)\n");
+    }
 }
 
 void housekeeping_task_bk_split_flash(void) {
@@ -593,6 +611,16 @@ void housekeeping_task_bk_split_flash(void) {
             if (bksf_rpc_send(BKSF_CMD_NONE, 0, NULL, 0)) {
                 uprintf("bksf: slave rejoined -> DONE\n");
                 sync_state = BKSF_SYNC_IDLE;
+                // T5.1: with the slave done and back, update the master last so
+                // both halves end on the same build. Runs from here (the master's
+                // main loop) and never returns once the apply begins; if it fails
+                // early it only logs, leaving the master usable.
+                if (up_self_flash) {
+                    up_self_flash = false;
+                    uprintf("bksf: master self-flash last\n");
+                    bksf_self_update_from_peer_hold(BKSF_SELF_HOLD_MS);
+                    uprintf("bksf: master self-flash did not run\n");
+                }
                 return;
             }
             if ((int32_t)(timer_read32() - up_rejoin_deadline) >= 0) {
@@ -614,6 +642,7 @@ void housekeeping_task_bk_split_flash(void) {
 void bksf_rpc_init(void) {}
 void bksf_start_handshake(void) {}
 void bksf_start_slave_update(void) {}
+void bksf_start_both_update(void) {}
 void housekeeping_task_bk_split_flash(void) {}
 
 #endif // SPLIT_TRANSACTION_RPC

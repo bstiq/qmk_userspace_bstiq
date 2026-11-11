@@ -9,6 +9,7 @@
 #include <string.h>
 
 #include "print.h"
+#include "wait.h" // wait_ms, for the T5.2 armed-window hold injection
 
 #include "hardware/flash.h"
 #include "hardware/sync.h"
@@ -365,6 +366,10 @@ bool bksf_stage_image(const uint8_t *src, uint32_t len) {
 }
 
 void bksf_self_update_from_peer(void) {
+    bksf_self_update_from_peer_hold(0u);
+}
+
+void bksf_self_update_from_peer_hold(uint32_t hold_ms) {
     const uint8_t *img = bksf_peer_image_ptr();
     uint32_t       len = bksf_peer_image_size();
 
@@ -390,6 +395,13 @@ void bksf_self_update_from_peer(void) {
     if (!bksf_arm()) {
         uprintf("bksf: arm FAILED\n");
         return;
+    }
+
+    // T5.2 injection: keep the master armed (XIP still on, app still running) so
+    // a power cut here lands in RPI-RP2 deterministically. Normal builds pass 0.
+    if (hold_ms != 0u) {
+        uprintf("bksf: armed; holding %u ms for the power-cut test\n", (unsigned)hold_ms);
+        wait_ms(hold_ms);
     }
 
     uprintf("bksf: apply (never returns)\n");

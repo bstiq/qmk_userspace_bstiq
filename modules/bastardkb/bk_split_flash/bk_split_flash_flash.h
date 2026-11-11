@@ -79,6 +79,12 @@ void bksf_apply_and_reset(const uint8_t *src, uint32_t len);
 // in (see tools/gen_peer_image.py); otherwise it only logs and returns.
 void bksf_self_update_from_peer(void);
 
+// Part 5 (T5.1/T5.2): like bksf_self_update_from_peer(), but after ARM hold for
+// `hold_ms` before applying (XIP stays on, so the app keeps running). `hold_ms`
+// is a power-cut test injection: it widens the master's armed window so a cut
+// lands there deterministically instead of racing the ~1 s apply. 0 = normal.
+void bksf_self_update_from_peer_hold(uint32_t hold_ms);
+
 // T2.4 helper: deterministically leave flash sector 0 in the state a COMMIT
 // interruption would produce, then reset. `zeroed` true programs the sector with
 // all-zero bytes (a garbage boot2), false leaves it erased. Either way the boot2

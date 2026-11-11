@@ -41,6 +41,7 @@
 #define BKSF_TEST_PARTIAL0 6     // T2.4: erase sector 0, program it with zeros, reset (mid-program state)
 #define BKSF_TEST_RPC 7          // T3: master->slave ARM/ARMED/ABORT handshake
 #define BKSF_TEST_UPDATE_SLAVE 8 // T4: master streams the peer image to the slave and commits
+#define BKSF_TEST_UPDATE_BOTH 9  // T5: master updates the slave, then self-flashes last
 #ifndef BKSF_TEST
 #    define BKSF_TEST BKSF_TEST_DUMP
 #endif
@@ -58,6 +59,16 @@
 #endif
 #ifndef BKSF_CORRUPT_MODE
 #    define BKSF_CORRUPT_MODE 1
+#endif
+
+// T5.2 power-cut injection for the combined (both-halves) update. After the
+// master arms its own boot2 (slave already done and rejoined), hold this long
+// before applying, so a power cut hits the master's armed window deterministically
+// instead of racing the ~1 s copy. XIP stays on during the hold, so the app keeps
+// running and the COM is observable. 0 = off (normal operation). The master is
+// the USB half, so a cut here lands it in RPI-RP2 (recoverable).
+#ifndef BKSF_SELF_HOLD_MS
+#    define BKSF_SELF_HOLD_MS 0u
 #endif
 
 // Split RPC: the module owns one transaction id. The build's generated
