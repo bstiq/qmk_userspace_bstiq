@@ -74,6 +74,21 @@
 // Split RPC: the module owns one transaction id. The build's generated
 // community-module post-config auto-defines SPLIT_TRANSACTION_RPC when this is
 // present, and the generated split_transaction_id_community_modules.inc adds it
-// to the transaction enum. RPC_M2S_BUFFER_SIZE / RPC_S2M_BUFFER_SIZE default to
-// 32, which is exactly sizeof(bksf_msg_t).
+// to the transaction enum.
 #define SPLIT_TRANSACTION_IDS_MODULE_BK_SPLIT_FLASH RPC_ID_BK_SPLIT_FLASH_CMD
+
+// T7.1 bulk data plane. The control-plane messages stay 32 B, but image chunks
+// travel in a dedicated length-prefixed frame (bk_split_flash_pack.h) delivered
+// by a single split transaction, so the shared RPC buffer must hold a whole
+// frame rather than the default 32 B. The frame is 16 B header + BKSF_BULK_CHUNK
+// payload; the transport's transaction size fields are uint8_t, so a frame must
+// fit in 255 B (asserted in the header). The ack stays small.
+#ifndef BKSF_BULK_CHUNK
+#    define BKSF_BULK_CHUNK 224
+#endif
+#ifndef RPC_M2S_BUFFER_SIZE
+#    define RPC_M2S_BUFFER_SIZE (16 + BKSF_BULK_CHUNK)
+#endif
+#ifndef RPC_S2M_BUFFER_SIZE
+#    define RPC_S2M_BUFFER_SIZE 32
+#endif

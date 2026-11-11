@@ -1,5 +1,6 @@
 SRC += bk_split_flash_flash.c
 SRC += bk_split_flash_rpc.c
+SRC += bk_split_flash_pack.c
 
 # Optional peer image for the T2.5 self-flash test. Generate it with
 # tools/gen_peer_image.py; it is then picked up automatically (the module's

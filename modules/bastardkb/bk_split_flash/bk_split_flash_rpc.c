@@ -12,6 +12,7 @@
 #include "bk_split_flash.h"
 #include "bk_split_flash_flash.h"
 #include "bk_split_flash_proto.h"
+#include "bk_split_flash_pack.h"
 
 // Parts 3 & 4: the split control plane. Part 3 is the ARM/ARMED/ABORT
 // handshake; Part 4 streams the image into the slave's staging region, verifies
@@ -68,44 +69,32 @@ static void bksf_rxp_begin(bksf_msg_t *reply, const bksf_msg_t *msg) {
     reply->value = staging;
 }
 
-// Buffers a chunk only; the sector flush happens in housekeeping, never inside
-// the RPC callback (an erase takes tens of ms and would blow the reply timeout).
-static void bksf_rxp_chunk(bksf_msg_t *reply, const bksf_msg_t *msg) {
-    uint32_t off = msg->value;
-    uint8_t  n   = msg->len;
-
-    // Always report rxp_off: the master uses it to resync when a reply is lost.
-    // On ACK the slave has advanced, so value becomes off+n; on NACK it is the
-    // current position, so the master can tell "already applied" from "retry".
-    reply->value = rxp_off;
-
-    if (!rxp_active || n == 0 || n > BKSF_CHUNK_DATA_SIZE || off != rxp_off || rxp_off + n > rxp_len || rxp_pending) {
-        reply->cmd    = BKSF_CMD_NACK;
-        reply->status = BKSF_ST_ERR;
-        return;
+// Buffers one chunk into the 4 KiB sector scratch, hashing it incrementally and
+// flagging a pending flush on an exact sector boundary. Shared by the control
+// RPC chunk path and the T7.1 bulk-frame path so both enforce the same rules.
+// Returns true if accepted; the caller always reports the resulting rxp_off.
+static bool bksf_rxp_accept(uint32_t off, uint8_t n, const uint8_t *data, uint32_t crc, uint8_t max_chunk) {
+    if (!rxp_active || n == 0 || n > max_chunk || off != rxp_off || rxp_off + n > rxp_len || rxp_pending) {
+        return false;
     }
 
     uint32_t in_sector = off & (BKSF_FLASH_SECTOR_SIZE - 1u);
     if (n > BKSF_FLASH_SECTOR_SIZE - in_sector) {
-        reply->cmd    = BKSF_CMD_NACK;
-        reply->status = BKSF_ST_ERR;
-        return;
+        return false;
     }
 
-    // Per-chunk integrity (design: index/len/crc32). Check the CRC *before*
-    // buffering or hashing, so a corrupted payload is never written to staging
-    // and rxp_off does not advance; the master re-sends this exact offset.
-    uint32_t got = bksf_crc32(msg->data, n);
-    if (got != msg->crc) {
-        uprintf("bksf: slave chunk crc mismatch off=%u len=%u want=0x%08X got=0x%08X -> NACK\n", (unsigned)off, (unsigned)n, (unsigned)msg->crc, (unsigned)got);
-        reply->cmd    = BKSF_CMD_NACK;
-        reply->status = BKSF_ST_ERR;
-        return;
+    // Per-chunk integrity: check the CRC *before* buffering or hashing, so a
+    // corrupted payload is never written to staging and rxp_off does not
+    // advance; the master re-sends this exact offset.
+    uint32_t got = bksf_crc32(data, n);
+    if (got != crc) {
+        uprintf("bksf: slave chunk crc mismatch off=%u len=%u want=0x%08X got=0x%08X -> NACK\n", (unsigned)off, (unsigned)n, (unsigned)crc, (unsigned)got);
+        return false;
     }
 
     uint8_t *buf = bksf_scratch();
-    memcpy(buf + in_sector, msg->data, n);
-    rxp_crc_run = bksf_crc32_update(rxp_crc_run, msg->data, n);
+    memcpy(buf + in_sector, data, n);
+    rxp_crc_run = bksf_crc32_update(rxp_crc_run, data, n);
     rxp_off += n;
 
     if (in_sector + n == BKSF_FLASH_SECTOR_SIZE) {
@@ -116,9 +105,48 @@ static void bksf_rxp_chunk(bksf_msg_t *reply, const bksf_msg_t *msg) {
         // in-flight transport transaction -> a zeroed "false" reply).
         rxp_flush_not_before = timer_read32() + BKSF_FLUSH_DELAY_MS;
     }
+    return true;
+}
+
+// Buffers a chunk only; the sector flush happens in housekeeping, never inside
+// the RPC callback (an erase takes tens of ms and would blow the reply timeout).
+static void bksf_rxp_chunk(bksf_msg_t *reply, const bksf_msg_t *msg) {
+    // Always report rxp_off: the master uses it to resync when a reply is lost.
+    // On ACK the slave has advanced, so value becomes off+n; on NACK it is the
+    // current position, so the master can tell "already applied" from "retry".
+    reply->value = rxp_off;
+
+    if (!bksf_rxp_accept(msg->value, msg->len, msg->data, msg->crc, BKSF_MSG_DATA_SIZE)) {
+        reply->cmd    = BKSF_CMD_NACK;
+        reply->status = BKSF_ST_ERR;
+        return;
+    }
 
     reply->cmd   = BKSF_CMD_ACK;
     reply->value = rxp_off;
+}
+
+// T7.1: receive one bulk frame and reply with an ack. The frame is delivered by
+// a single split transaction on the module's own id, so `in_len` is exactly the
+// frame size; the control plane keeps `in_len == sizeof(bksf_msg_t)`.
+static void bksf_bulk_handle(uint8_t in_len, const void *in_data, uint8_t out_len, void *out_data) {
+    bksf_bulk_ack_t ack = {.magic = BKSF_BULK_ACK_MAGIC, .status = BKSF_ST_OK, .rxp_off = rxp_off};
+
+    if (in_len < BKSF_BULK_FRAME_SIZE) {
+        ack.status = BKSF_ST_ERR;
+    } else {
+        const bksf_bulk_frame_t *frame = (const bksf_bulk_frame_t *)in_data;
+        if (frame->magic != BKSF_BULK_MAGIC) {
+            ack.status = BKSF_ST_BADCMD;
+        } else if (!bksf_rxp_accept(frame->offset, (uint8_t)frame->len, frame->data, frame->crc, BKSF_BULK_CHUNK)) {
+            ack.status = BKSF_ST_ERR;
+        }
+        ack.rxp_off = rxp_off;
+    }
+
+    if (out_data != NULL && out_len >= sizeof(ack)) {
+        memcpy(out_data, &ack, sizeof(ack));
+    }
 }
 
 static void bksf_rxp_verify(bksf_msg_t *reply, const bksf_msg_t *msg) {
@@ -139,6 +167,14 @@ static void bksf_rxp_verify(bksf_msg_t *reply, const bksf_msg_t *msg) {
 
 static void bksf_rpc_handle(uint8_t in_len, const void *in_data, uint8_t out_len, void *out_data) {
     if (in_data == NULL || in_len < sizeof(bksf_msg_t)) {
+        return;
+    }
+
+    // T7.1: the bulk data plane shares this transaction id but not the message
+    // format. A bulk frame is exactly BKSF_BULK_FRAME_SIZE long; control-plane
+    // messages are exactly sizeof(bksf_msg_t). Dispatch on the length.
+    if (in_len == BKSF_BULK_FRAME_SIZE) {
+        bksf_bulk_handle(in_len, in_data, out_len, out_data);
         return;
     }
 
@@ -204,6 +240,8 @@ static void bksf_rpc_handle(uint8_t in_len, const void *in_data, uint8_t out_len
 
 void bksf_rpc_init(void) {
     transaction_register_rpc(RPC_ID_BK_SPLIT_FLASH_CMD, bksf_rpc_handle);
+    // T7.1: size the module's transaction for the bulk data plane.
+    bksf_bulk_init();
 }
 
 // ---------------------------------------------------------------------------
@@ -266,44 +304,15 @@ static bool bksf_rpc_send(bksf_cmd_t cmd, uint32_t value, const uint8_t *data, u
     return ok;
 }
 
-// Send one image chunk with its per-chunk CRC32, a single attempt. A corrupted
-// payload is caught by the slave's CRC check (it NACKs without buffering). The
-// reply can be lost or arrive zeroed when it races the slave's sector flush (the
-// flush runs with interrupts off and the transport's crc8 guard silently drops a
-// garbled RPC), so a non-ACK is *not* fatal here: the caller resyncs against the
-// slave's rxp_off (the slave always reports it), which distinguishes "already
-// applied" from "retry" and keeps a corrupt link from ever reaching COMMIT.
-static bool bksf_rpc_send_chunk(uint32_t off, const uint8_t *data, uint8_t n) {
-    static bool corrupt_done = false;
-
-    bksf_msg_t out = {.version = BKSF_PROTO_VERSION, .cmd = (uint8_t)BKSF_CMD_CHUNK, .len = n, .value = off};
-    memcpy(out.data, data, n);
-    out.crc = bksf_crc32(data, n);
-
-    // T4.3 link-integrity injection: flip one payload byte *after* the CRC is
-    // computed so the slave's recomputed CRC mismatches and it NACKs. Mode 1
-    // corrupts the first send only; mode 2 corrupts every send.
-    if (BKSF_CORRUPT_OFF != 0u && off == (uint32_t)BKSF_CORRUPT_OFF && (BKSF_CORRUPT_MODE == 2 || !corrupt_done)) {
-        out.data[0] ^= 0x01u;
-        corrupt_done = true;
-    }
-
-    bksf_msg_t in = {0};
-    bool       ok = transaction_rpc_exec(RPC_ID_BK_SPLIT_FLASH_CMD, sizeof(out), &out, sizeof(in), &in);
-    last_reply    = in;
-
-    if (ok && in.cmd == BKSF_CMD_ACK) {
-        return true;
-    }
-    // Idempotency: the slave already advanced past this chunk, so a previous ACK
-    // was lost. rxp_off == off+n means the data is safely buffered.
-    if (ok && in.value == (uint32_t)(off + n)) {
-        uprintf("bksf: chunk off=%u already applied (reply lost), rxp_off=%u\n", (unsigned)off, (unsigned)in.value);
-        return true;
-    }
-    uprintf("bksf: chunk off=%u not acked reply=%u st=%u v=0x%08X ok=%u\n", (unsigned)off, (unsigned)in.cmd, (unsigned)in.status, (unsigned)in.value, (unsigned)ok);
-    return false;
-}
+// T7.1: image chunks now travel over the dedicated bulk frame
+// (bksf_bulk_send_chunk in bk_split_flash_pack.c), not the control RPC. The
+// semantics are unchanged: a corrupted payload is caught by the receiver's CRC
+// check (it NACKs without buffering), and the reply can be lost or arrive
+// zeroed when it races the slave's sector flush (the flush runs with interrupts
+// off and the transport's crc8 guard silently drops a garbled RPC). So a non-ACK
+// is *not* fatal: the caller resyncs against the receiver's rxp_off (always
+// reported), which distinguishes "already applied" from "retry" and keeps a
+// corrupt link from ever reaching COMMIT.
 
 // Probe the slave's receive position (SYNC also reports rxp_off in data[0..3]).
 static bool bksf_rpc_status(uint32_t *off, uint32_t *flushed) {
@@ -327,6 +336,7 @@ static void bksf_abort(const char *why) {
         uprintf("bksf: split peer not responding; if that half is in RPI-RP2, reflash it\n");
     }
     bksf_rpc_send(BKSF_CMD_ABORT, 0, NULL, 0);
+    bksf_bulk_resume();
     sync_state = BKSF_SYNC_IDLE;
 }
 
@@ -427,7 +437,7 @@ void housekeeping_task_bk_split_flash(void) {
     }
 
     if (sync_state == BKSF_SYNC_IDLE) {
-        if (is_keyboard_master()) {
+        if (is_keyboard_master() && !bksf_bulk_is_quiesced()) {
             bksf_peer_watchdog();
         }
         return;
@@ -467,6 +477,9 @@ void housekeeping_task_bk_split_flash(void) {
             memcpy(crcbuf, &up_crc, sizeof(crcbuf));
             if (bksf_rpc_send(BKSF_CMD_BEGIN, up_len, crcbuf, sizeof(crcbuf)) && last_reply.cmd == BKSF_CMD_ACK) {
                 uprintf("bksf: slave BEGIN ack (staging=0x%05X)\n", (unsigned)last_reply.value);
+                // T7.2: the bulk data phase starts now; quiesce normal module
+                // split activity until the last sector is durably written.
+                bksf_bulk_quiesce();
                 sync_state    = BKSF_SYNC_CHUNKS;
                 up_off        = 0;
                 sync_deadline = timer_read32();
@@ -482,13 +495,13 @@ void housekeeping_task_bk_split_flash(void) {
                 // on an exact boundary and buffers into a 4 KiB sector scratch.
                 uint32_t in_sector = up_off & (BKSF_FLASH_SECTOR_SIZE - 1u);
                 uint32_t n         = up_len - up_off;
-                if (n > BKSF_CHUNK_DATA_SIZE) {
-                    n = BKSF_CHUNK_DATA_SIZE;
+                if (n > BKSF_BULK_CHUNK) {
+                    n = BKSF_BULK_CHUNK;
                 }
                 if (n > BKSF_FLASH_SECTOR_SIZE - in_sector) {
                     n = BKSF_FLASH_SECTOR_SIZE - in_sector;
                 }
-                if (!bksf_rpc_send_chunk(up_off, up_img + up_off, (uint8_t)n)) {
+                if (!bksf_bulk_send_chunk(up_off, up_img + up_off, (uint8_t)n, NULL)) {
                     // Reply lost or refused: don't hammer retries blind (a sector
                     // flush is about to make the slave deaf). Back off and resync.
                     // Count attempts at this offset so a persistently bad chunk
@@ -572,6 +585,8 @@ void housekeeping_task_bk_split_flash(void) {
             if (bksf_rpc_send(BKSF_CMD_SYNC, 0, NULL, 0) && last_reply.cmd == BKSF_CMD_ACK && last_reply.value >= up_flush_target) {
                 if (up_off >= up_len) {
                     uprintf("bksf: sent %u bytes\n", (unsigned)up_off);
+                    // T7.2: the data phase is over; resume normal module traffic.
+                    bksf_bulk_resume();
                     sync_state    = BKSF_SYNC_VERIFY;
                     sync_tries    = 0;
                     sync_deadline = timer_read32();
