@@ -17,13 +17,14 @@ to the generated C blob, so the peer dragged at the staging address is
 byte-identical to the one embedded in the app.
 
 The app's UF2 block header fields (flags + family id) are preserved, so the file
-stays a normal RP2040 UF2. The normal `<TARGET>.uf2` is never touched -- this tool
-writes a separate combined file.
+stays a normal RP2040 UF2. The output path is chosen by the caller; the build
+script passes `--out <TARGET>.uf2`, overwriting QMK's plain carrier copy with
+the complete image so that exactly one UF2 remains for the target.
 
 Usage:
     python3 make_combined_uf2.py \
         --app .build/<TARGET>.uf2 --elf .build/<TARGET>.elf \
-        --peer bk_split_flash_peer_image.bin --out <TARGET>_combined.uf2
+        --peer bk_split_flash_peer_image.bin --out <TARGET>.uf2
 """
 
 import argparse
