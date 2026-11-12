@@ -47,14 +47,14 @@
 #    define BKSF_TEST BKSF_TEST_DUMP
 #endif
 
-// T4.3 link-integrity test. Deliberately corrupt the payload of one chunk on
-// the master *after* its CRC32 is computed, so the slave's per-chunk CRC check
-// fails and it NACKs; the master must then re-send the same offset.
-//   BKSF_CORRUPT_OFF  : image offset of the chunk to corrupt (0 = disabled).
-//   BKSF_CORRUPT_MODE : 1 = corrupt only the first attempt (the retry then
+// T4.3 link-integrity test. Deliberately corrupt the payload of one frame on
+// the master *after* its CRC32 is computed, so the slave drops that frame and
+// the final VERIFY bitmap flags its sector:
+//   BKSF_CORRUPT_OFF  : image offset of the frame to corrupt (0 = disabled).
+//   BKSF_CORRUPT_MODE : 1 = corrupt only the first attempt (the re-stream then
 //                       succeeds -> the update still completes and commits);
-//                       2 = corrupt every attempt (the master exhausts its
-//                       retries and aborts -> the update must never commit).
+//                       2 = corrupt every attempt (re-stream retries exhaust
+//                       -> the master aborts, the update must never commit).
 #ifndef BKSF_CORRUPT_OFF
 #    define BKSF_CORRUPT_OFF 0u
 #endif
@@ -62,38 +62,52 @@
 #    define BKSF_CORRUPT_MODE 1
 #endif
 
-// Benchmark escape hatch for the "faster" work. With BKSF_LEGACY_FLUSH=1 the
-// module restores the pre-speed-up streaming behaviour exactly (erase+program
-// inside the per-sector flush, no up-front erase phase, 60 ms sector pace, 4
-// chunks/tick, 2 ms chunk pace), so an A/B transfer time can be measured with the
-// same board and image. Both halves must be flashed with the same flavour (the
-// wire semantics differ but the descriptor version does not). Default 0 = new.
-#ifndef BKSF_LEGACY_FLUSH
-#    define BKSF_LEGACY_FLUSH 0
+// Size of the slave's whole-image RAM receive buffer. The distributed peer
+// image (the UF2 payload, padded to a 4096-byte sector) is ~90 KB for this
+// board; 128 KB leaves headroom. It must fit ram0 (256 KB) alongside the rest
+// of .bss/.data and the ChibiOS heap -- the linker refuses an oversize value,
+// and the image descriptor rejects anything larger at runtime.
+#ifndef BKSF_RX_BUFFER_SIZE
+#    define BKSF_RX_BUFFER_SIZE (128u * 1024u)
+#endif
+
+// Max number of re-stream passes after a VERIFY reports bad sectors. A lost or
+// corrupt frame is repaired by re-sending that sector's frames; exhausting this
+// bound aborts the run without ever committing.
+#ifndef BKSF_RESTREAM_MAX
+#    define BKSF_RESTREAM_MAX 8
 #endif
 
 // T5.2 power-cut injection for the combined (both-halves) update. After the
-// master arms its own boot2 (slave already done and rejoined), hold this long
-// before applying, so a power cut hits the master's armed window deterministically
-// instead of racing the ~1 s copy. XIP stays on during the hold, so the app keeps
-// running and the COM is observable. 0 = off (normal operation). The master is
-// the USB half, so a cut here lands it in RPI-RP2 (recoverable).
+// master arms its own boot2, hold this long before applying, so a power cut
+// hits the master's armed window deterministically instead of racing the ~1 s
+// copy. XIP stays on during the hold, so the app keeps running and the COM is
+// observable. 0 = off (normal operation). The master is the USB half, so a cut
+// here lands it in RPI-RP2 (recoverable).
 #ifndef BKSF_SELF_HOLD_MS
 #    define BKSF_SELF_HOLD_MS 0u
 #endif
 
-// Split RPC: the module owns one transaction id. The build's generated
-// community-module post-config auto-defines SPLIT_TRANSACTION_RPC when this is
-// present, and the generated split_transaction_id_community_modules.inc adds it
-// to the transaction enum.
-#define SPLIT_TRANSACTION_IDS_MODULE_BK_SPLIT_FLASH RPC_ID_BK_SPLIT_FLASH_CMD
+// Split RPC: the module owns one transaction id. The BastardKB QMK fork
+// auto-defines SPLIT_TRANSACTION_RPC and registers RPC_ID_BK_SPLIT_FLASH_CMD in
+// the split transaction enum via its generated community-module .inc. The stock
+// QMK in this workspace has neither, so provide the equivalent from the module:
+// enable the code path and add the id through QMK's standard
+// SPLIT_TRANSACTION_IDS_USER hook (argos already uses the _KB hook, so the RPC
+// machinery itself is present). On a tree that generates these, drop this block.
+#ifndef SPLIT_TRANSACTION_RPC
+#    define SPLIT_TRANSACTION_RPC
+#endif
+#ifndef SPLIT_TRANSACTION_IDS_USER
+#    define SPLIT_TRANSACTION_IDS_USER RPC_ID_BK_SPLIT_FLASH_CMD
+#endif
 
-// T7.1 bulk data plane. The control-plane messages stay 32 B, but image chunks
+// v4 bulk data plane. The control-plane messages stay 32 B, but image frames
 // travel in a dedicated length-prefixed frame (bk_split_flash_pack.h) delivered
 // by a single split transaction, so the shared RPC buffer must hold a whole
-// frame rather than the default 32 B. The frame is 16 B header + BKSF_BULK_CHUNK
-// payload; the transport's transaction size fields are uint8_t, so a frame must
-// fit in 255 B (asserted in the header). The ack stays small.
+// frame. The frame is 16 B header + BKSF_BULK_CHUNK payload; the transport's
+// transaction size fields are uint8_t, so a frame must fit in 255 B (asserted
+// in the header). The 32 B reply buffer must still hold a control message.
 #ifndef BKSF_BULK_CHUNK
 #    define BKSF_BULK_CHUNK 224
 #endif

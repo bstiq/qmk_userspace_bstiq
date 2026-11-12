@@ -76,11 +76,14 @@ void bksf_commit_identical(void);
 // erases the running app).
 bool bksf_stage_image(const uint8_t *src, uint32_t len);
 
-// RAM-resident: copy the staged image at `src` (in the staging region) over the
-// running app, sectors 1..N first, then sector 0 (boot2 + vector table) last.
-// Per-sector read-back verify. NEVER RETURNS: it always resets, so it is safe
-// even though it overwrites the code that called it. If the boot2 CRC is already
-// zeroed (armed), an interrupted copy lands in RPI-RP2.
+// RAM-resident: copy the image at `src` over the running app, sectors 1..N
+// first, then sector 0 (boot2 + vector table) last. `src` may be a RAM buffer
+// (the slave's receive buffer) or the XIP staging region (the master's
+// self-flash) -- it is copied into a RAM bounce sector before each erase/program,
+// so a RAM source is safe while XIP is off. Per-sector read-back verify.
+// NEVER RETURNS: it always resets, so it is safe even though it overwrites the
+// code that called it. If the boot2 CRC is already zeroed (armed), an
+// interrupted copy lands in RPI-RP2.
 void bksf_apply_and_reset(const uint8_t *src, uint32_t len);
 
 // Orchestrate the T2.5 test: stage the compiled-in peer image, ARM, then apply
@@ -108,28 +111,6 @@ uint32_t bksf_crc32_update(uint32_t crc, const uint8_t *data, uint32_t len);
 uint32_t bksf_crc32_final(uint32_t crc);
 uint32_t bksf_crc32(const uint8_t *data, uint32_t len);
 
-// The module's 4 KiB RAM sector scratch buffer, for the RPC image receiver.
-uint8_t *bksf_scratch(void);
-
-// Erase one 4 KiB staging sector for the up-front erase phase, taking interrupts
-// off only for the (~45 ms typical) erase itself. A sector that already reads as
-// erased (0xFF) is skipped: the staging window is untouched until an update
-// writes it, so a first-time update into a never-written window pays no erase at
-// all. Used one sector per housekeeping pass so the slave stays answerable.
-bool bksf_staging_erase_sector(uint32_t dst_off);
-
-// Program-only + read-back verify one *already-erased* staging sector, taking the
-// 4 KiB payload from bksf_scratch(). This is the per-sector flush of the streaming
-// phase (~11 ms program, no erase) and is only valid after the erase phase has
-// erased that sector. Used by the slave-side RPC receiver to flush a completed
-// sector.
-bool bksf_staging_program_sector(uint32_t dst_off);
-
-// Legacy (BKSF_LEGACY_FLUSH) per-sector flush: erase+program+read-back, used only
-// by the A/B benchmark path (no up-front erase phase). Not used by the default
-// build.
-bool bksf_staging_flush_sector(uint32_t dst_off);
-
 // Accessors for the (weakly defined) compiled-in peer image.
 const uint8_t *bksf_peer_image_ptr(void);
 uint32_t       bksf_peer_image_size(void);
@@ -140,7 +121,8 @@ const bksf_image_hdr_t *bksf_peer_image_hdr_ptr(void);
 
 // T9.1: validate a distributable image against its descriptor and the running
 // firmware's expectations (descriptor magic/format, protocol version, length,
-// CRC32, and staging fit). Returns true if the image may be distributed; on
+// CRC32, and fit within both the slave's RAM receive buffer and the staging
+// window). Returns true if the image may be distributed; on
 // false, writes a short human-readable reason into `why` (if non-NULL). Pure
 // computation -- nothing is written and nothing is armed.
 bool bksf_validate_image(const uint8_t *img, uint32_t len, const bksf_image_hdr_t *hdr, char *why, size_t why_len);

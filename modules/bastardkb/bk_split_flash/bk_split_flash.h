@@ -42,12 +42,14 @@ void bksf_tick_state(void);
 void bksf_rpc_init(void);        // register the module's RPC callback
 void bksf_start_handshake(void); // master: begin ARM -> ARMED, driven by housekeeping
 
-// Part 4: master streams the const peer image to the slave (ARM -> BEGIN ->
-// chunks -> VERIFY -> COMMIT), driven by housekeeping.
+// Part 4 (v4): master streams the const peer image into the slave's RAM
+// (ARM -> BEGIN -> STREAM -> VERIFY -> re-stream bad sectors -> COMMIT), driven
+// by housekeeping. Frames are fire-and-forget; one final VERIFY returns a
+// per-sector bitmap that drives any re-stream.
 void bksf_start_slave_update(void);
 
-// Part 5 (T5.1): like bksf_start_slave_update(), but after the slave rejoins the
-// master self-flashes the same peer image last (T2.5 path) and resets, so a
-// single trigger updates both halves. Driven by housekeeping; does not return
-// once the master's own apply begins.
+// Part 5 (T5.1) / Phase 4: like bksf_start_slave_update(), but the master also
+// self-flashes the same peer image. The master's apply is kicked off at COMMIT
+// so it overlaps the slave's apply on the other MCU (instead of after REJOIN).
+// Driven by housekeeping; does not return once the master's own apply begins.
 void bksf_start_both_update(void);

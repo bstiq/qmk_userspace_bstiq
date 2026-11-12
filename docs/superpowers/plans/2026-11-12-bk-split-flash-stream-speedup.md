@@ -204,7 +204,29 @@ The §5–§8 baseline drives streaming to ~2.8 s (near the 62.5 kB/s floor) but
 
 ## WHERE WE ARE
 
-Plan complete (this document). **No code modified.** Deliberately a fresh document — prior plan docs were not read or edited, per the "fresh start / ignore all previous plans" instruction. Next step is **Phase 0 measurement and driver-capability confirmation on hardware**, then stop for the user's hardware verification before any code changes. Decisions locked from Q&A: ~256 KB RAM pool, per-sector bitmap, total-wall-clock metric. **Scope refined (latest): module code only** — QMK core files are never edited; core behaviour may be superseded only through the §2.1 community-module mechanisms, gated in Phase 0. **Latest tweak:** the agent may read core QMK files in the local WSL QMK installation (read-only) to find module-side overrides, but only when it plausibly makes the transfer faster; core files are still never edited and the tree is located at runtime. §13 levers #1–#4, #6, #7 are pure module code; #5 is conditional on that gate; baud remains excluded. See §13 for beyond-baseline levers and its "Realistic expectation" for a sober gain range (no code modified yet).
+**Baseline implemented (Phases 1-4) and built.** Per the user's scoping: skip Phase 0
+(no measurement / no A-B comparison against existing code), skip Phase 5 (delta),
+skip §13 "beyond the baseline" levers, no git checks, no legacy A/B code. All
+communication/flash speeds are measured by the user on hardware. The module now
+buffers the whole peer image in slave RAM, streams frames fire-and-forget (no
+per-chunk ack), does one VERIFY (whole-image CRC + per-sector bad-bitmap),
+re-streams only flagged sectors (bounded), and applies directly from RAM; the
+both-halves apply is overlapped and the REJOIN poll cadence trimmed. A single
+`bastardkb/dilemma/4x6_4_procyon` `vendor` image was built for the user to check
+(`bastardkb_dilemma_4x6_4_procyon_vendor.uf2`, links with no undefined symbols,
+`rx_buf` 128 KB fits with ~40 KB heap headroom). **Build-environment shims** were
+required because this workspace's QMK is not the BastardKB fork: a weak
+`bk_split_flash_compat.c` for the missing community-module eeconfig datablock
+APIs, and `SPLIT_TRANSACTION_RPC` / `SPLIT_TRANSACTION_IDS_USER` in module
+`config.h` (otherwise the entire RPC path compiles to stubs). On the BastardKB
+fork these shims are redundant and should be dropped. A **full combined UF2** was
+also generated via the reusable `scripts/build_full_uf2.py`
+(`bastardkb_dilemma_4x6_4_procyon_vendor_full.uf2` == `..._combined.uf2`,
+585,728 B): carrier app + the peer image staged at 0x10030000, single BOOTSEL
+drag, descriptor proto v4 validated. Next: **stop for the user's hardware
+verification** (flash both halves, set `BKSF_TEST` to the update test,
+measure wall-clock). See §13 for the deferred beyond-baseline levers (no code
+written for those).
 
 ## Task log
 
@@ -221,3 +243,5 @@ Plan complete (this document). **No code modified.** Deliberately a fresh docume
 | 2026-11-12 | Sober "realistic gains" assessment | Added §13 "Realistic expectation": full-image baseline ~1.2–1.6× (~20–40%), re-flash up to ~1.7×, both-halves ~1.5–2×; multi-× only via delta and only when few sectors change (bimodal, could be ~1×). Key driver is the unmeasured fixed apply cost; the 5–10× figure is a best-case ceiling, not a planning number. No code modified. |
 | 2026-11-12 | Make the delta path explicit in the plan | Added §7 Phase 5 (delta streaming + delta apply, with a mandatory full-streaming fallback and a Phase-0 gate) and clarified in §13 that these levers are part of the plan as measurement-gated follow-on work. Also clarified "no streaming trick" was a ceiling statement, not a named technique. No code modified. |
 | 2026-11-12 | Allow read-only core QMK inspection | Relaxed read rules: the implementing agent may read (never edit) core QMK files in the local WSL QMK installation to discover module-side override/supersede opportunities, **only when it plausibly makes the transfer faster**; locate the tree at runtime, no hardcoded path. Updated §2.1, §7 Phase 0(d)-(f), §9, §12 item 5, §13 #5 / excluded clause, WHERE WE ARE. Core files remain read-only; every written line stays in the module. No code modified. |
+| 2026-11-12 | Implement baseline Phases 1-4 + build dilemma 4x6 procyon image | Scope: skip Phase 0 (no measurements/comparisons), no Phase 5 delta, no §13 levers, no legacy A/B code, no git checks. Files: `bk_split_flash_proto.h` (v4 commands/version), `bk_split_flash_pack.{h,c}` (fire-and-forget 240 B frames, `target2initiator_buffer_size=0`, no ack), new `bk_split_flash_rx.{h,c}` (128 KB RAM buffer + per-sector slot bitmap + one VERIFY/re-stream), `bk_split_flash_flash.{h,c}` (table CRC32 bit-exact with generator, RAM-fit validation, apply-from-RAM, retired staging sector helpers), `bk_split_flash_rpc.c` (ARM->BEGIN->STREAM->VERIFY->re-stream->COMMIT->REJOIN, overlapped both-halves apply, trimmed rejoin cadence), `config.h` (v4 config), `rules.mk`, `image.h`/`bk_split_flash.h` comments. Build-env shims (this QMK is not the BastardKB fork): `bk_split_flash_compat.c` (weak eeconfig datablock stubs), `post_config.h` prototypes guarded by `__ASSEMBLER__`, `config.h` `SPLIT_TRANSACTION_RPC`+`SPLIT_TRANSACTION_IDS_USER`. Built `bastardkb/dilemma/4x6_4_procyon:vendor` — links clean, streaming symbols + 128 KB `rx_buf` present in ELF, UF2 at userspace root (189,952 B). User measures speeds on hardware. |
+| 2026-11-12 | Generate full combined UF2 + reusable build script | Added `scripts/build_full_uf2.py` (reusable, Python 3.8-compatible): clean "peer" build -> `tools/gen_peer_image.py` (peer blob .c/.bin + v4 descriptor) -> verify descriptor (magic/proto/len/CRC/RAM-fit) against sidecar -> clean "carrier" build (embeds blob; post_rules.mk also emits combined UF2) -> `tools/make_combined_uf2.py` -> verify combined UF2 block structure -> mirror to `_combined.uf2`. Flags: `-kb/-km/--qmk-home/--out/--no-clean/--bksf-test` (test selector patched temporarily, restored via atexit). Produced `bastardkb_dilemma_4x6_4_procyon_vendor_full.uf2` == `..._combined.uf2` (585,728 B = 1144 UF2 blocks: app 760 blocks ending 0x1002F7B8, peer 98,304 B / 384 blocks at staging 0x10030000). Peer blob (98,304 B, 24 sectors, proto v4, crc 0x75F88193) is embedded in the carrier ELF (`bksf_peer_image`, `bksf_peer_image_hdr`) alongside the v4 streaming code; keymap config.h left unchanged (BKSF_TEST_DUMP). |

@@ -66,12 +66,34 @@ static inline uint32_t bksf_bitrev32(uint32_t x) {
     return x;
 }
 
-uint32_t bksf_crc32_update(uint32_t crc, const uint8_t *data, uint32_t len) {
-    for (uint32_t i = 0; i < len; i++) {
-        crc ^= bksf_bitrev8(data[i]);
+// A 256-entry lookup table reproduces the bit-by-bit reflected CRC above
+// exactly (verified bit-for-bit), but in ~1 lookup/byte instead of ~8 rounds.
+// This lets the slave hash the whole received image inside the VERIFY callback
+// (a few ms) without tripping the 20 ms serial handshake timeout. The table is
+// built once, lazily; bksf_crc32()/bksf_crc32_final() keep their exact output,
+// so the image descriptor produced by tools/gen_peer_image.py still matches.
+static uint32_t bksf_crc_table[256];
+static bool     bksf_crc_table_ready = false;
+
+static void bksf_crc_table_init(void) {
+    if (bksf_crc_table_ready) {
+        return;
+    }
+    for (uint32_t i = 0; i < 256u; i++) {
+        uint32_t t = i;
         for (int k = 0; k < 8; k++) {
-            crc = (crc >> 1) ^ (0xEDB88320u & (uint32_t)(-(int32_t)(crc & 1u)));
+            t = (t >> 1) ^ (0xEDB88320u & (uint32_t)(-(int32_t)(t & 1u)));
         }
+        bksf_crc_table[i] = t;
+    }
+    bksf_crc_table_ready = true;
+}
+
+uint32_t bksf_crc32_update(uint32_t crc, const uint8_t *data, uint32_t len) {
+    bksf_crc_table_init();
+    for (uint32_t i = 0; i < len; i++) {
+        uint8_t idx = (uint8_t)((crc & 0xFFu) ^ bksf_bitrev8(data[i]));
+        crc         = (crc >> 8) ^ bksf_crc_table[idx];
     }
     return crc;
 }
@@ -266,6 +288,12 @@ bool bksf_validate_image(const uint8_t *img, uint32_t len, const bksf_image_hdr_
         BKSF_REJECT("CRC mismatch");
     }
 
+    // The image must fit the slave's RAM receive buffer (the streaming path).
+    // It is also staged to flash by the master's self-flash path, so keep that
+    // bound too. RAM-fit is the binding constraint.
+    if (len > BKSF_RX_BUFFER_SIZE) {
+        BKSF_REJECT("exceeds RAM buffer");
+    }
     uint32_t staging_bytes = 0;
     bksf_get_staging_window(NULL, &staging_bytes);
     if (len > staging_bytes) {
@@ -314,11 +342,9 @@ void bksf_verify_staging_peer(void) {
 }
 
 // Scratch for one sector. In .bss (RAM), so it survives the app being erased.
+// Used by the RAM-resident apply/copy routines (bksf_copy4k), the master's
+// self-flash staging (bksf_stage_image), and the COMMIT-identical test.
 static uint8_t bksf_bounce[BKSF_FLASH_SECTOR_SIZE];
-
-uint8_t *bksf_scratch(void) {
-    return bksf_bounce;
-}
 
 // RAM-resident byte copy: does not call memcpy, which lives in flash and may be
 // overwritten mid-update. volatile defeats the memcpy idiom.
@@ -348,57 +374,10 @@ static bool __no_inline_not_in_flash_func(bksf_write_sector_ram)(const uint8_t *
     return true;
 }
 
-// Legacy (BKSF_LEGACY_FLUSH) per-sector flush: erase+program+read-back in one go,
-// used only by the A/B benchmark path where there is no up-front erase phase.
-bool bksf_staging_flush_sector(uint32_t dst_off) {
-    uint32_t irq = save_and_disable_interrupts();
-    bool     ok  = bksf_write_sector_ram(bksf_bounce, dst_off, true);
-    restore_interrupts(irq);
-    return ok;
-}
-
-// Erase phase, one 4 KiB staging sector per housekeeping pass (called by the
-// slave-side receiver). A sector that already reads as erased (0xFF) is skipped,
-// so a staging window that has never been written is erased for free. Interrupts
-// are off only for the ~45 ms erase, never across the whole window, so the slave
-// stays answerable to the master between sectors.
-bool bksf_staging_erase_sector(uint32_t dst_off) {
-    const volatile uint8_t *p    = (const volatile uint8_t *)(uintptr_t)(BKSF_XIP_BASE + dst_off);
-    bool                    need = false;
-    for (uint32_t i = 0; i < BKSF_FLASH_SECTOR_SIZE; i++) {
-        if (p[i] != 0xFFu) {
-            need = true;
-            break;
-        }
-    }
-    if (!need) {
-        return true;
-    }
-    uint32_t irq = save_and_disable_interrupts();
-    flash_range_erase(dst_off, BKSF_FLASH_SECTOR_SIZE);
-    restore_interrupts(irq);
-    return true;
-}
-
-// Program-only flush of one already-erased staging sector (the streaming phase).
-// Only staging is touched (never the running app), so interrupts are toggled for
-// the ~11 ms program rather than held off, and there is no erase here: the erase
-// phase did it up front.
-bool bksf_staging_program_sector(uint32_t dst_off) {
-    __compiler_memory_barrier();
-    uint32_t                irq = save_and_disable_interrupts();
-    flash_range_program(dst_off, bksf_bounce, BKSF_FLASH_SECTOR_SIZE);
-    const volatile uint8_t *p  = (const volatile uint8_t *)(uintptr_t)(BKSF_XIP_BASE + dst_off);
-    bool                    ok = true;
-    for (uint32_t i = 0; i < BKSF_FLASH_SECTOR_SIZE; i++) {
-        if (p[i] != bksf_bounce[i]) {
-            ok = false;
-            break;
-        }
-    }
-    restore_interrupts(irq);
-    return ok;
-}
+// The per-sector staging erase/program/flush helpers are gone in v4: the slave
+// buffers the whole image in RAM (bk_split_flash_rx.c) and only erases/programs
+// flash once, during the single final bksf_apply_and_reset(). There are no deaf
+// IRQ-off windows during streaming, so no pacing or polling around them.
 
 // RAM-resident immediate reset (AIRCR.SYSRESETREQ). Inlined, so no flash fetch.
 static inline void bksf_system_reset(void) {

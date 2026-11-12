@@ -13,33 +13,38 @@
 #include "bk_split_flash_proto.h"
 #include "bk_split_flash_pack.h"
 
-// T7.1: the bulk data plane. Image chunks travel in a dedicated, length-prefixed
-// frame carried by a single split transaction on the module's own transaction id
-// (see bk_split_flash_pack.h). This file owns the frame and the master-side
-// sender; the slave-side receiver lives in bk_split_flash_rpc.c next to the
-// receive state it drives.
+// v4 bulk data plane. Image frames travel in a dedicated, length-prefixed frame
+// carried by a single split transaction on the module's own transaction id.
+// The slave-side receiver lives in bk_split_flash_rpc.c; it writes each frame
+// straight into the RAM buffer (bk_split_flash_rx.c).
 
 #ifdef SPLIT_TRANSACTION_RPC
 
-// The whole point of T7.1: the shared RPC buffer must now hold a bulk frame, not
-// just the 32 B control message. Fail the build if the override did not take.
+// The shared RPC buffer must hold a whole frame; the control-plane reply must
+// still fit its 32-byte message.
 _Static_assert(RPC_M2S_BUFFER_SIZE >= BKSF_BULK_FRAME_SIZE, "RPC_M2S_BUFFER_SIZE must be large enough for a bulk frame");
-_Static_assert(RPC_S2M_BUFFER_SIZE >= sizeof(bksf_bulk_ack_t), "RPC_S2M_BUFFER_SIZE must hold a bulk ack");
+_Static_assert(RPC_S2M_BUFFER_SIZE >= sizeof(bksf_msg_t), "RPC_S2M_BUFFER_SIZE must hold a control reply");
 
 extern split_transaction_desc_t split_transaction_table[NUM_TOTAL_TRANSACTIONS];
 
 void bksf_bulk_init(void) {
-    // Repurpose the module's transaction for the data plane: the frame in one
-    // direction, the small ack in the other. The control-plane RPC keeps using
-    // the shared RPC buffers through the four-transaction RPC path, which sets
-    // its own lengths at runtime, so the two do not collide.
+    // Frame in one direction, NO reply in the other: target2initiator size 0
+    // skips the per-chunk ack wait. The control-plane RPC keeps using the shared
+    // 32-byte buffers through its own four-transaction path (which sets its
+    // lengths at runtime), so the two do not collide.
     split_transaction_table[RPC_ID_BK_SPLIT_FLASH_CMD].initiator2target_buffer_size  = BKSF_BULK_FRAME_SIZE;
-    split_transaction_table[RPC_ID_BK_SPLIT_FLASH_CMD].target2initiator_buffer_size = sizeof(bksf_bulk_ack_t);
+    split_transaction_table[RPC_ID_BK_SPLIT_FLASH_CMD].target2initiator_buffer_size = 0;
 }
 
-bool bksf_bulk_send_chunk(uint32_t off, const uint8_t *data, uint8_t n, uint32_t *rxp_off_out) {
-    static bool corrupt_done = false;
+// T4.3 link-integrity injection. Reset at the start of each run so mode 1
+// ("corrupt the first attempt only") behaves identically across triggers.
+static bool corrupt_done = false;
 
+void bksf_bulk_reset(void) {
+    corrupt_done = false;
+}
+
+bool bksf_bulk_send_chunk(uint32_t off, const uint8_t *data, uint8_t n) {
     bksf_bulk_frame_t frame = {
         .magic  = BKSF_BULK_MAGIC,
         .offset = off,
@@ -48,54 +53,39 @@ bool bksf_bulk_send_chunk(uint32_t off, const uint8_t *data, uint8_t n, uint32_t
     };
     memcpy(frame.data, data, n);
 
-    // T4.3 link-integrity injection: flip one payload byte *after* the CRC is
-    // computed, so the receiver's recomputed CRC mismatches and it NACKs. Mode 1
-    // corrupts the first attempt only (the retry then succeeds); mode 2 corrupts
-    // every attempt (the master exhausts its retries and aborts without commit).
-    // The target is the image offset `BKSF_CORRUPT_OFF`, so the test is
-    // independent of the chunk size: corrupt whichever chunk contains it.
+    // Flip one payload byte *after* the CRC is computed, so the slave's
+    // recomputed CRC mismatches and it drops the frame. Mode 1 corrupts the
+    // first attempt only (the VERIFY bitmap flags that sector; on re-stream it
+    // arrives clean); mode 2 corrupts every attempt (re-stream retries exhaust,
+    // the master aborts and never commits). The target is the image offset
+    // BKSF_CORRUPT_OFF, so the test is independent of the chunk size.
     if (BKSF_CORRUPT_OFF != 0u && off <= (uint32_t)BKSF_CORRUPT_OFF && (uint32_t)BKSF_CORRUPT_OFF < off + n && (BKSF_CORRUPT_MODE == 2 || !corrupt_done)) {
         frame.data[BKSF_CORRUPT_OFF - off] ^= 0x01u;
         corrupt_done = true;
     }
 
-    bksf_bulk_ack_t ack = {0};
-    bool            ok  = transport_execute_transaction(RPC_ID_BK_SPLIT_FLASH_CMD, &frame, BKSF_BULK_FRAME_SIZE, &ack, sizeof(ack));
-    if (rxp_off_out != NULL) {
-        *rxp_off_out = ack.rxp_off;
-    }
-
-    if (ok && ack.magic == BKSF_BULK_ACK_MAGIC && ack.status == BKSF_ST_OK) {
-        return true;
-    }
-    // Idempotency: the receiver already advanced past this chunk, so a previous
-    // ack was lost. rxp_off == off+n means the data is safely buffered.
-    if (ok && ack.magic == BKSF_BULK_ACK_MAGIC && ack.rxp_off == (uint32_t)(off + n)) {
-        uprintf("bksf: bulk off=%u already applied (reply lost), rxp_off=%u\n", (unsigned)off, (unsigned)ack.rxp_off);
-        return true;
-    }
-    uprintf("bksf: bulk off=%u not acked ok=%u magic=0x%08X st=%u rxp_off=%u\n", (unsigned)off, (unsigned)ok, (unsigned)ack.magic, (unsigned)ack.status, (unsigned)ack.rxp_off);
-    return false;
+    // Fire-and-forget: target2initiator_length 0 -> no reply wait. The mandatory
+    // 1-byte serial handshake still paces frames; correctness is guaranteed by
+    // the final VERIFY bitmap, which re-streams any lost/corrupt sector.
+    return transport_execute_transaction(RPC_ID_BK_SPLIT_FLASH_CMD, &frame, BKSF_BULK_FRAME_SIZE, NULL, 0);
 }
 
-// T7.2: a module-level quiesce window around the bulk phase. The transport is
-// master-initiated and single-threaded, so a bulk frame and a matrix/RPC
-// transaction can never interleave on the wire; what the bulk phase must not do
-// is let the module's own idle probes race it. This flag gates that activity and
-// is cleared deterministically when the data phase ends.
+// Quiesce window around the streaming phase: the transport is master-initiated
+// and single-threaded, so a bulk frame and a matrix/RPC transaction can never
+// interleave on the wire; this flag only gates the module's own idle probes.
 static bool bulk_quiesced = false;
 
 void bksf_bulk_quiesce(void) {
     if (!bulk_quiesced) {
         bulk_quiesced = true;
-        uprintf("bksf: bulk phase begin (split traffic quiesced)\n");
+        uprintf("bksf: stream begin (split traffic quiesced)\n");
     }
 }
 
 void bksf_bulk_resume(void) {
     if (bulk_quiesced) {
         bulk_quiesced = false;
-        uprintf("bksf: bulk phase end (split traffic resumed)\n");
+        uprintf("bksf: stream end (split traffic resumed)\n");
     }
 }
 
@@ -106,12 +96,12 @@ bool bksf_bulk_is_quiesced(void) {
 #else // !SPLIT_TRANSACTION_RPC
 
 void bksf_bulk_init(void) {}
+void bksf_bulk_reset(void) {}
 
-bool bksf_bulk_send_chunk(uint32_t off, const uint8_t *data, uint8_t n, uint32_t *rxp_off_out) {
+bool bksf_bulk_send_chunk(uint32_t off, const uint8_t *data, uint8_t n) {
     (void)off;
     (void)data;
     (void)n;
-    (void)rxp_off_out;
     return false;
 }
 
