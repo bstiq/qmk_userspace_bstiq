@@ -14,12 +14,16 @@
 // transaction id (see bk_split_flash_pack.c), so the 32 B RPC buffer no longer
 // bounds the payload.
 //
-// v4 is fire-and-forget: the module's transaction is configured with a zero
-// target2initiator_buffer_size, so the master does not wait for a per-chunk
-// ack. The serial protocol still performs a mandatory 1-byte handshake per
-// transaction (serial_protocol.c), which paces the frames on the wire; full
-// correctness is guaranteed by the single final VERIFY (a per-sector bitmap),
-// which re-streams any sector whose frame was lost or failed its CRC32.
+// v4 keeps one minimal per-frame reply (a 1-byte target2initiator_buffer_size).
+// True fire-and-forget (zero reply) does not hold master/slave in lockstep on
+// the half-duplex PIO serial link: the 1-byte handshake is sent before the
+// payload is received/processed, so the slave must also answer *after* the
+// callback. That reply makes each frame a proper request/reply transaction and
+// paces the master to the slave's frame processing; it carries only a status
+// byte (the master ignores it). Full correctness is guaranteed by the single
+// final VERIFY (a per-sector bitmap), which re-streams any sector whose frame
+// was lost or failed its CRC32. The streaming speed-up (no per-sector pacing,
+// erase phase, flush polling, deaf IRQ-off windows) is unchanged.
 //
 // Sizing: the transport's transaction descriptor sizes are `uint8_t`, so a
 // frame must fit in 255 B. `BKSF_BULK_CHUNK` is the payload budget; the frame
@@ -61,8 +65,10 @@ typedef struct __attribute__((packed)) {
 #define BKSF_BULK_FRAME_SIZE ((uint32_t)sizeof(bksf_bulk_frame_t))
 _Static_assert(BKSF_BULK_FRAME_SIZE <= 255, "bulk frame must fit the uint8_t transaction size field");
 
-// Set up the module's own transaction for the fire-and-forget data plane (both
-// halves). Called from bksf_rpc_init() after the RPC callback is registered.
+#define BKSF_BULK_REPLY_SIZE 1
+
+// Set up the module's own transaction for the bulk data plane (both halves).
+// Called from bksf_rpc_init() after the RPC callback is registered.
 void bksf_bulk_init(void);
 
 // Reset the link-integrity injection at the start of each run (master).

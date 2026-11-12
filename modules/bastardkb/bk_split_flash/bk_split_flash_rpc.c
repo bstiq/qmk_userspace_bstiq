@@ -16,10 +16,11 @@
 #include "bk_split_flash_rx.h"
 
 // v4 split control plane. The slave buffers the whole image in RAM
-// (bk_split_flash_rx.c); the master streams every frame fire-and-forget, does
-// one final VERIFY (a per-sector bad-bitmap + whole-image CRC), re-streams only
-// flagged sectors, and COMMITs an apply-from-RAM. There are no deaf IRQ-off
-// windows, per-sector flush/erase phases, SYNC polling or resync states.
+// (bk_split_flash_rx.c); the master streams every frame back-to-back with a
+// minimal per-frame reply, does one final VERIFY (a per-sector bad-bitmap +
+// whole-image CRC), re-streams only flagged sectors, and COMMITs an apply-from-
+// RAM. There are no deaf IRQ-off windows, per-sector flush/erase phases, SYNC
+// polling or resync states.
 //
 // Both halves run the same build: a mismatched peer is refused by the image
 // descriptor before anything is armed (bk_split_flash_image.h / BKSF_PROTO_VERSION).
@@ -66,18 +67,22 @@ static void bksf_rxp_verify(bksf_msg_t *reply, const bksf_msg_t *msg) {
     memcpy(reply->data, bitmap, reply->len);
 }
 
-// v4: fire-and-forget frame. There is NO reply (out_len == 0): the slave writes
-// the frame straight into rx_buf and validates its CRC. A lost or corrupt frame
-// simply leaves that sector's slot unset and is recovered by the VERIFY bitmap.
-static void bksf_bulk_handle(uint8_t in_len, const void *in_data) {
-    if (in_data == NULL || in_len < BKSF_BULK_FRAME_SIZE) {
-        return;
+// v4: bulk frame. The slave writes the frame straight into rx_buf, validates its
+// CRC, and returns a 1-byte status reply so the master waits for the frame to be
+// processed before sending the next one (half-duplex lockstep). A lost or corrupt
+// frame simply leaves that sector's slot unset and is recovered by the VERIFY
+// bitmap; the master ignores the status content.
+static void bksf_bulk_handle(uint8_t in_len, const void *in_data, uint8_t out_len, void *out_data) {
+    uint8_t status = BKSF_ST_ERR;
+    if (in_data != NULL && in_len >= BKSF_BULK_FRAME_SIZE) {
+        const bksf_bulk_frame_t *frame = (const bksf_bulk_frame_t *)in_data;
+        if (frame->magic == BKSF_BULK_MAGIC && bksf_rx_accept(frame->offset, frame->len, frame->data, frame->crc)) {
+            status = BKSF_ST_OK;
+        }
     }
-    const bksf_bulk_frame_t *frame = (const bksf_bulk_frame_t *)in_data;
-    if (frame->magic != BKSF_BULK_MAGIC) {
-        return;
+    if (out_data != NULL && out_len >= BKSF_BULK_REPLY_SIZE) {
+        *(uint8_t *)out_data = status;
     }
-    (void)bksf_rx_accept(frame->offset, frame->len, frame->data, frame->crc);
 }
 
 static void bksf_rpc_handle(uint8_t in_len, const void *in_data, uint8_t out_len, void *out_data) {
@@ -89,7 +94,7 @@ static void bksf_rpc_handle(uint8_t in_len, const void *in_data, uint8_t out_len
     // A bulk frame is exactly BKSF_BULK_FRAME_SIZE long; control messages are
     // exactly sizeof(bksf_msg_t). Dispatch on the length.
     if (in_len == BKSF_BULK_FRAME_SIZE) {
-        bksf_bulk_handle(in_len, in_data);
+        bksf_bulk_handle(in_len, in_data, out_len, out_data);
         return;
     }
 

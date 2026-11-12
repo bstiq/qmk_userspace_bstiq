@@ -28,12 +28,14 @@ _Static_assert(RPC_S2M_BUFFER_SIZE >= sizeof(bksf_msg_t), "RPC_S2M_BUFFER_SIZE m
 extern split_transaction_desc_t split_transaction_table[NUM_TOTAL_TRANSACTIONS];
 
 void bksf_bulk_init(void) {
-    // Frame in one direction, NO reply in the other: target2initiator size 0
-    // skips the per-chunk ack wait. The control-plane RPC keeps using the shared
-    // 32-byte buffers through its own four-transaction path (which sets its
-    // lengths at runtime), so the two do not collide.
+    // Frame in one direction, a 1-byte reply in the other: a zero-reply
+    // (fire-and-forget) transaction does not keep the half-duplex serial link in
+    // lockstep, so each frame stays a proper request/reply transaction. The
+    // control-plane RPC keeps using the shared 32-byte buffers through its own
+    // four-transaction path (which sets its lengths at runtime), so the two do
+    // not collide.
     split_transaction_table[RPC_ID_BK_SPLIT_FLASH_CMD].initiator2target_buffer_size  = BKSF_BULK_FRAME_SIZE;
-    split_transaction_table[RPC_ID_BK_SPLIT_FLASH_CMD].target2initiator_buffer_size = 0;
+    split_transaction_table[RPC_ID_BK_SPLIT_FLASH_CMD].target2initiator_buffer_size = BKSF_BULK_REPLY_SIZE;
 }
 
 // T4.3 link-integrity injection. Reset at the start of each run so mode 1
@@ -64,10 +66,12 @@ bool bksf_bulk_send_chunk(uint32_t off, const uint8_t *data, uint8_t n) {
         corrupt_done = true;
     }
 
-    // Fire-and-forget: target2initiator_length 0 -> no reply wait. The mandatory
-    // 1-byte serial handshake still paces frames; correctness is guaranteed by
-    // the final VERIFY bitmap, which re-streams any lost/corrupt sector.
-    return transport_execute_transaction(RPC_ID_BK_SPLIT_FLASH_CMD, &frame, BKSF_BULK_FRAME_SIZE, NULL, 0);
+    // Proper request/reply: the 1-byte reply (sent by the slave after it has
+    // processed the frame) keeps master/slave in lockstep on the half-duplex
+    // link. Its content is ignored; correctness is guaranteed by the final
+    // VERIFY bitmap, which re-streams any lost/corrupt sector.
+    uint8_t reply = 0;
+    return transport_execute_transaction(RPC_ID_BK_SPLIT_FLASH_CMD, &frame, BKSF_BULK_FRAME_SIZE, &reply, BKSF_BULK_REPLY_SIZE);
 }
 
 // Quiesce window around the streaming phase: the transport is master-initiated

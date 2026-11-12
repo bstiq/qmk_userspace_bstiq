@@ -84,18 +84,23 @@ redefinition).
   `%.bin: %.elf` pattern rule will try to *build* it (linking a bogus `.elf`, and
   clobbering the file). Gate on `$(wildcard ...)` and let the app relink instead.
 
-## Packaging (Part 8 / T8.2, combined UF2)
+## Packaging (Part 8 / T8.2, single combined UF2)
 
-- `modules/bastardkb/bk_split_flash/post_rules.mk` adds a `bksf-combined-uf2` target
-  as a prerequisite of `all`. When the peer blob **and** its raw sidecar
-  `bk_split_flash_peer_image.bin` are both present, it runs
-  `tools/make_combined_uf2.py` to emit `$(QMK_USERSPACE)/<TARGET>_combined.uf2`
-  (app at `0x10000000` + peer at `0x10000000 + staging_start`, `staging_start` =
-  `__flash_binary_end` read from the ELF `.symtab`, rounded up to 4096 B). It is a
-  no-op otherwise, and never touches the normal `<TARGET>.uf2`.
-- `tools/gen_peer_image.py` writes the `.c` blob **and** the byte-identical raw
-  sidecar `.bin`. The combined step is gated on the `.c`, so a peer build must remove
-  the `.c` (a leftover `.bin` alone is not enough to trigger it).
+- Exactly ONE flashable image is produced: `$(QMK_USERSPACE)/<TARGET>.uf2` (the
+  conventional QMK name), overwritten with the combined image — app at
+  `0x10000000` + the peer at `0x10000000 + staging_start` (`staging_start` =
+  `__flash_binary_end` from the ELF `.symtab`, rounded up to 4096 B).
+- `scripts/build_full_uf2.py` is the single producer: (1) remove stale
+  `bk_split_flash_peer_image.{c,bin}` -> (2) clean "peer" `qmk compile` ->
+  (3) `tools/gen_peer_image.py` on `.build/<TARGET>.uf2` (writes `.c` blob +
+  byte-identical raw sidecar `.bin` + descriptor) -> (4) verify descriptor ->
+  (5) clean "carrier" `qmk compile` (embeds the blob) ->
+  (6) `tools/make_combined_uf2.py` writes `<TARGET>.uf2` -> (7) verify UF2
+  structure -> (8) delete stale `<TARGET>_peer.uf2` / `_full.uf2` /
+  `_combined.uf2`. Plain `qmk compile` also leaves exactly one UF2:
+  `post_rules.mk` no longer emits a second combined file.
+- A stale embedded peer garbles the split link; step (1) always removes both the
+  `.c` and `.bin` before the peer build, so re-running the script is always safe.
 
 ## Guard rails and indicator (Part 9)
 

@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 # Copyright 2026 Quentin LEBASTARD <bstkbd@gmail.com>
 # SPDX-License-Identifier: GPL-2.0-or-later
-"""Build a complete ("full") UF2 for bk_split_flash.
+"""Build the single bk_split_flash firmware UF2.
 
-A plain build has no peer image compiled in, so the update path has nothing to
-distribute. This script produces the real artifact: one BOOTSEL-drag UF2 holding
+A plain `qmk compile` has no peer image compiled in, so the update path has
+nothing to distribute. This script produces the ONE image to flash: a single
+BOOTSEL-drag UF2 holding
 
   * the carrier app (with a peer image embedded in flash), at 0x10000000, and
   * that same peer image written at the staging address (the app's
@@ -14,21 +15,25 @@ Both payloads are byte-identical to the embedded blob (gen_peer_image.py writes
 the raw sidecar used here). Everything is derived from the build itself -- no
 hardcoded addresses, no QMK core edits, no git.
 
+The output is <TARGET>.uf2 in the userspace root -- the conventional QMK name,
+overwritten with the complete image. The old <TARGET>_peer.uf2 /
+<TARGET>_full.uf2 / <TARGET>_combined.uf2 set is gone: stale variants are
+deleted after a successful build, so exactly one UF2 remains.
+
 Pipeline (all module code lives under modules/bastardkb/bk_split_flash/):
   1. remove any stale generated peer blob, so build #1 is a clean "peer" build
-  2. qmk compile  -> peer firmware UF2 (kept as <TARGET>_peer.uf2)
+  2. qmk compile  -> peer firmware UF2 in .build/ (fed straight to step 3)
   3. tools/gen_peer_image.py -> bk_split_flash_peer_image.{c,bin} + descriptor
   4. verify the descriptor (magic/proto/len/CRC/RAM-fit) against the sidecar
-  5. qmk compile  -> carrier app (embeds the blob; post_rules.mk also emits
-     <TARGET>_combined.uf2)
-  6. tools/make_combined_uf2.py -> the definitive full UF2
-  7. verify the combined UF2 block structure (app at XIP base, peer at staging)
-  8. mirror to the conventional <TARGET>_combined.uf2 name
+  5. qmk compile  -> carrier app (embeds the blob)
+  6. tools/make_combined_uf2.py -> the single <TARGET>.uf2 (app + staged peer)
+  7. verify the UF2 block structure (app at XIP base, peer at staging)
+  8. delete stale <TARGET>_peer/_full/_combined.uf2 variants
 
 Reusable usage (run inside WSL, where `qmk` is on PATH):
     python3 scripts/build_full_uf2.py
     python3 scripts/build_full_uf2.py -kb bastardkb/dilemma/4x6_4_procyon -km vendor
-    python3 scripts/build_full_uf2.py --out /path/to/my_full.uf2
+    python3 scripts/build_full_uf2.py --out /path/to/image.uf2
     python3 scripts/build_full_uf2.py --no-clean       # incremental, faster
     python3 scripts/build_full_uf2.py --bksf-test BKSF_TEST_UPDATE_BOTH
 
@@ -40,7 +45,6 @@ import argparse
 import atexit
 import os
 import re
-import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -204,7 +208,7 @@ def main():
                     help="QMK keyboard (default: bastardkb/dilemma/4x6_4_procyon)")
     ap.add_argument("-km", "--keymap", default="vendor", help="keymap (default: vendor)")
     ap.add_argument("--qmk-home", default=None, help="QMK firmware tree (default: autodetect)")
-    ap.add_argument("--out", default=None, help="output full UF2 (default: <TARGET>_full.uf2 in userspace root)")
+    ap.add_argument("--out", default=None, help="output UF2 (default: <TARGET>.uf2 in userspace root)")
     ap.add_argument("--no-clean", action="store_true", help="skip qmk compile -c (incremental, faster)")
     ap.add_argument("--bksf-test", default=None,
                     help="temporarily override the keymap's BKSF_TEST selector (e.g. "
@@ -231,9 +235,7 @@ def main():
     app_elf = build / (target + ".elf")
     peer_c = MODULE / "bk_split_flash_peer_image.c"
     peer_bin = MODULE / "bk_split_flash_peer_image.bin"
-    peer_uf2 = USERSPACE / (target + "_peer.uf2")
-    out = Path(args.out) if args.out else USERSPACE / (target + "_full.uf2")
-    conventional = USERSPACE / (target + "_combined.uf2")
+    out = Path(args.out) if args.out else USERSPACE / (target + ".uf2")
     clean_flag = [] if args.no_clean else ["-c"]
 
     log("userspace    : %s" % USERSPACE)
@@ -246,27 +248,26 @@ def main():
             log("removing stale %s" % p.name)
             p.unlink()
 
-    # 2. Clean "peer" build (no blob compiled in).
+    # 2. Clean "peer" build (no blob compiled in). Its UF2 is fed straight to
+    #    gen_peer_image.py in step 3; there is no separate "_peer.uf2" deliverable.
     run(["qmk", "compile", "-kb", args.keyboard, "-km", args.keymap] + clean_flag, cwd=USERSPACE)
     if not app_uf2.is_file():
         fail("peer build produced no %s" % app_uf2)
-    shutil.copyfile(str(app_uf2), str(peer_uf2))
-    log("peer firmware: %s (%d bytes)" % (peer_uf2, peer_uf2.stat().st_size))
+    log("peer firmware: %s (%d bytes)" % (app_uf2, app_uf2.stat().st_size))
 
     # 3. Generate the embedded blob + raw sidecar + image descriptor.
-    run([sys.executable, TOOLS / "gen_peer_image.py", peer_uf2], cwd=USERSPACE)
+    run([sys.executable, TOOLS / "gen_peer_image.py", app_uf2], cwd=USERSPACE)
 
     # 4. Descriptor must be one the running firmware will accept before ARM.
     verify_blob(peer_c, peer_bin)
 
-    # 5. Carrier build: rules.mk now compiles the blob in; post_rules.mk also
-    #    emits the conventional <TARGET>_combined.uf2 as a side effect.
+    # 5. Carrier build: rules.mk now compiles the blob in. The combined image is
+    #    built explicitly in step 6; post_rules.mk does not emit a second file.
     run(["qmk", "compile", "-kb", args.keyboard, "-km", args.keymap] + clean_flag, cwd=USERSPACE)
     if not app_uf2.is_file() or not app_elf.is_file():
         fail("carrier build produced no %s / %s" % (app_uf2, app_elf))
 
-    # 6. Build the definitive full UF2 explicitly (robust even if post_rules.mk
-    #    is ever disabled or its naming changes).
+    # 6. Build the single output UF2 (app + staged peer) at the conventional name.
     run([sys.executable, TOOLS / "make_combined_uf2.py",
          "--app", app_uf2, "--elf", app_elf,
          "--peer", peer_bin, "--out", out], cwd=USERSPACE)
@@ -276,14 +277,17 @@ def main():
     # 7. Structural verification of the produced image.
     verify_uf2(out, app_elf, peer_bin)
 
-    # 8. Mirror to the conventional combined name so both conventions agree.
-    if conventional.resolve() != out.resolve():
-        shutil.copyfile(str(out), str(conventional))
+    # 8. Exactly one image: remove the old redundant variants (and QMK's carrier
+    #    copy when --out points elsewhere) so only <out> remains.
+    for name in (target + ".uf2", target + "_peer.uf2",
+                 target + "_full.uf2", target + "_combined.uf2"):
+        stale = USERSPACE / name
+        if stale.exists() and stale.resolve() != out.resolve():
+            stale.unlink()
+            log("removed stale %s" % name)
 
-    log("DONE. Full image : %s" % out)
-    log("      Conventional: %s" % conventional)
-    log("      Peer build  : %s" % peer_uf2)
-    log("      Generated   : %s , %s" % (peer_c, peer_bin))
+    log("DONE. Image    : %s" % out)
+    log("      Generated: %s , %s" % (peer_c, peer_bin))
 
 
 if __name__ == "__main__":
