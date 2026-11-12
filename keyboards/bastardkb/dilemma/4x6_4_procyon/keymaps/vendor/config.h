@@ -17,13 +17,14 @@
  */
 #pragma once
 
-/* Split serial link speed. The link is a half-duplex PIO serial link. bk_split_flash
- * streams the whole peer image over it, so the transfer is wire-bound: run it at
- * 460800 (SELECT_SOFT_SERIAL_SPEED 0) for ~2x over the QMK default (1 = 230400).
- * This is the one hardware-sensitive knob here -- if the split link is flaky at
- * 460800, drop back to 1 (or try SERIAL_USART_SPEED directly).
- *   speed 0 = 460800, 1 = 230400 (default), 2 = 115200, ... */
-#define SELECT_SOFT_SERIAL_SPEED 0
+/* Split serial link speed. The link is a half-duplex PIO serial link and
+ * bk_split_flash streams the whole peer image over it, so the transfer is
+ * wire-bound: the baud is the hard ceiling. SELECT_SOFT_SERIAL_SPEED tops out at
+ * 0 = 460800, so set SERIAL_USART_SPEED directly to run at 921600 (2x the previous
+ * 460800, 4x the QMK default 230400). This is the one hardware-sensitive knob --
+ * if the split link is flaky at 921600, drop it: SERIAL_USART_SPEED 460800, or
+ * SELECT_SOFT_SERIAL_SPEED 1 for 230400. */
+#define SERIAL_USART_SPEED 921600
 
 #define DYNAMIC_KEYMAP_LAYER_COUNT 8
 #define SPLIT_LAYER_STATE_ENABLE
@@ -64,18 +65,5 @@
  * reflashed too). Keep typing so the bring-up tests can run. Remove this line to
  * restore normal argos gating. */
 #define ARGOS_DISABLE_BUILD_ID_GATE
-
-
-
-
-
-
-
-
-#undef BKSF_LEGACY_FLUSH
-#define BKSF_LEGACY_FLUSH 1
-
-
-
 
 
