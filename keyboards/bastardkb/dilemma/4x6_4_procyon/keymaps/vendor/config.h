@@ -17,13 +17,7 @@
  */
 #pragma once
 
-/* Split serial link speed. Half-duplex PIO serial link. bk_split_flash streams the
- * whole peer image over it, so the transfer is wire-bound: the baud is the hard
- * ceiling. SELECT_SOFT_SERIAL_SPEED tops out at 460800, so SERIAL_USART_SPEED is
- * set directly. 625000 gives an exact PIO clock divider (125e6 / (8 * 625000) =
- * 25.0), so no divider dither; if it is flaky drop to 460800, if clean try 781250
- * (div 20). 921600 (div 16.95, dithered) was too fast for this cable. */
-#define SERIAL_USART_SPEED 625000
+/* Split serial link speed is set globally in users/vendor/config.h (625000). */
 
 #define DYNAMIC_KEYMAP_LAYER_COUNT 8
 #define SPLIT_LAYER_STATE_ENABLE
