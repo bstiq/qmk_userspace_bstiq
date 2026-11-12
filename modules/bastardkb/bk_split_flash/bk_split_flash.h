@@ -30,6 +30,14 @@ typedef enum {
 
 bksf_state_t bksf_get_state(void);
 
+// T9.2: update the shared state that the "flash pending" indicator renders.
+// ERROR is shown for a short hold then auto-clears to IDLE (see
+// bksf_tick_state); every other state is shown until the next transition.
+void bksf_set_state(bksf_state_t state);
+
+// T9.2: age out the ERROR state (called from housekeeping).
+void bksf_tick_state(void);
+
 // Split control handshake (Part 3).
 void bksf_rpc_init(void);        // register the module's RPC callback
 void bksf_start_handshake(void); // master: begin ARM -> ARMED, driven by housekeeping

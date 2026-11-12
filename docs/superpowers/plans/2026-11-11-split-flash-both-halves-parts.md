@@ -9,9 +9,10 @@ charybdis 4x6 and dilemma 4x6 procyon; T5.1/T5.2 on the dilemma 4x6 procyon, wit
 few non-timed master cases assumed; T7.1/T7.2 bulk transport on the dilemma 4x6
 procyon). **Part 6 (host flashing) DEFERRED and NOT STARTED** (user, 2026-11-11; a
 partial implementation was reverted). **Part 8 (combined-UF2 packaging) is code
-complete and passes offline checks; HW verification pending.** **Next: Part 9**
-(guard rails and recovery) after the Part 8 HW check. See the "WHERE WE ARE" resume
-point below and the "Local build environment" section.
+complete and passes offline checks; HW verification pending.** **Part 9 (guard rails
+and recovery) is code complete and passes offline checks; HW verification pending.**
+**Next: Part 10** (bootmagic trigger) after the Part 8/9 HW checks. See the "WHERE WE
+ARE" resume point below and the "Local build environment" section.
 
 ---
 
@@ -569,6 +570,115 @@ override must `#undef` first (`-Werror` redefinition).
 
 **Part 9 exit criteria:** The feature fails safe and has a tested recovery path.
 
+### Part 9 implementation notes (2026-11-12)
+
+**T9.1 — image version/CRC guard.**
+- New `bk_split_flash_image.h`: `bksf_image_hdr_t` descriptor (16 B):
+  `{magic 0xB5F71A6E, hdr_version 1, proto_version, len, crc}`. It is the same
+  format a future host upload (Part 6) would carry with a staged image.
+- `tools/gen_peer_image.py` now writes `const bksf_image_hdr_t bksf_peer_image_hdr`
+  next to the blob and the raw sidecar. It reads `BKSF_PROTO_VERSION` straight from
+  `bk_split_flash_proto.h`, so a peer always stamps the protocol of the code it was
+  built from; `--proto-version N` overrides it to reproduce an incompatible image.
+  The script also self-checks its CRC32 port against the image's own boot2 checksum
+  at offset `0xFC`.
+- `bksf_validate_image()` (`bk_split_flash_flash.c`) checks the descriptor magic,
+  descriptor version, protocol version, length, CRC, and staging fit, and returns a
+  short reason string. It is pure computation -- nothing is written.
+- The guard runs **before ARM** in both paths: the distribution path
+  (`bksf_begin_update`) and the self-flash path (`bksf_self_update_from_peer_hold`).
+  On failure it logs `bksf: peer image rejected: <reason> -> not armed`, sets the
+  ERROR indicator, and arms/stages nothing.
+
+**T9.2 — "flash pending" indicator (RGB).**
+- `bksf_set_state()` / `bksf_tick_state()` (`bk_split_flash.c`); the master state
+  machine and the slave RPC handler set IDLE → PREPARE → ARMED → COPYING →
+  COMMITTING, and ERROR on any abort/rejection. ERROR auto-clears to IDLE after
+  `BKSF_ERROR_HOLD_MS` (3000 ms) so a failed run does not paint the board forever.
+- `rgb_matrix_indicators_advanced_bk_split_flash()` paints the half's LED range with
+  a per-state color: PREPARE white, ARMED amber, COPYING blue, COMMITTING magenta,
+  ERROR red. IDLE leaves the running effect untouched. `bk_split_flash` is listed
+  **last** in the dilemma `keymap.json` `modules`, so this hook runs after `argos`
+  and overrides its colors while a run is in flight. Per user (2026-11-12) the
+  indicator is **RGB only** -- no `bk_led_matrix`, no OLED.
+- The guard rejection (T9.1) drives ERROR, so a refused image flashes red as well as
+  logging.
+
+### Part 9 bring-up: T9.1/T9.2 procedure — dilemma 4x6 procyon
+
+Target: **`bastardkb/dilemma/4x6_4_procyon:vendor`** (same image on both halves).
+Images rebuilt from the Part 9 code by `bash /home/quinn/bksf_t9_images.sh` (rebuilds
+the peer from current code first, restores `config.h`, drops the blob).
+
+| image (`bksf_images/`) | build | case |
+|---|---|---|
+| `bksf_dilemma_T9_peer.uf2` | `DUMP` + `BKSF_VERSION "0.1.0-peer"` | peer (descriptor proto 2, crc `0x3C3BD13A`) |
+| `bksf_dilemma_T9_slave_update.uf2` | `UPDATE_SLAVE` | T9.2: indicator on the slave during COPY/COMMIT |
+| `bksf_dilemma_T9_both_update.uf2` | `UPDATE_BOTH` | T9.2: indicator on the master (self-flash) and the slave |
+| `bksf_dilemma_T9_bad_peer.uf2` | `UPDATE_BOTH`, peer descriptor `--proto-version 1` | T9.1: mismatch rejected before ARM |
+
+**T9.1 — mismatch rejected before ARM.** Flash `bksf_dilemma_T9_bad_peer.uf2` to
+**both** halves, link them, USB into the master, `qmk console`, press `BKSFTRG`.
+Expected master log:
+
+```
+bksf: 0.1.0 test=9
+bksf: peer image rejected: protocol version mismatch -> not armed
+```
+
+Nothing is armed, the slave stays untouched, and the half flashes **red** for ~3 s
+(the ERROR indicator). A mismatch is *not* possible via the built-in blob in a clean
+build (blob and descriptor are always generated together); the guarded cases are a
+stale/incompatible peer and, later, a host-uploaded image. Compare with
+`bksf_dilemma_T9_both_update.uf2`, which passes the same guard and runs normally.
+
+**T9.2 — "flash pending" indicator.** Flash `bksf_dilemma_T9_both_update.uf2` to
+**both** halves, link, USB into the master, press `BKSFTRG`. Watch both halves:
+- the **slave** flashes amber (ARMED) → blue (COPYING) → magenta (COMMITTING), then
+  reboots into the peer;
+- the **master** then flashes amber → blue → magenta during its own self-flash and
+  reboots into the peer.
+Pressing the trigger on `bksf_dilemma_T9_bad_peer.uf2` instead shows **red** (the
+ERROR state) until it auto-clears after ~3 s. IDLE (no run in flight) leaves whatever
+RGB effect is active unchanged.
+
+**Rebuild recipe.**
+```bash
+bash /home/quinn/bksf_t9_images.sh
+```
+It regenerates the peer with `gen_peer_image.py`, then builds the carrier variants,
+and restores `config.h` / removes the generated blob and sidecar afterwards.
+
+### Part 9 recovery procedure (T9.3)
+
+The fail-safe guarantees an interrupted update lands a half in the ROM bootloader
+(`RPI-RP2`), never a brick; the only recovery action is therefore always the same:
+**reach `RPI-RP2` and flash a known-good image.**
+
+1. **Preferred — double-tap reset.** Double-tap the half's reset (or its reset
+   button) so it enters the bootloader; a drive named `RPI-RP2` appears. A half that
+   failed its boot2 CRC check (armed, interrupted COPY/COMMIT) enters `RPI-RP2` on
+   *any* reset, so a plain reset/power-cycle also works here.
+2. **Fallback — BOOTSEL.** If the half does not enumerate as `RPI-RP2` (e.g. the
+   app is halted in `chSysHalt`, or double-tap does not take): hold the **BOOTSEL**
+   button while plugging in USB (or hold BOOTSEL and tap RESET). It mounts as
+   `RPI-RP2`.
+3. **Flash.** Drag a known-good UF2 onto `RPI-RP2`. Use the same image on **both**
+   halves so their argos `build_id`s match (a half-flashed pair is blocked by
+   argos's build-id gate unless `ARGOS_DISABLE_BUILD_ID_GATE` is defined).
+4. **Both halves.** The master is the USB half; the slave (left) half also exposes
+   USB (T0.1), so either half can be recovered directly. No A/B fallback is needed
+   (T0.1 "slave USB reachable: yes").
+5. **Diagnosis.** With the keyboard linked and USB in the master, `qmk console`
+   reports a peer that is off or in `RPI-RP2`:
+   `bksf: split peer lost (slave off or in RPI-RP2) - reflash that half to restore`,
+   and a failed handshake adds `if that half is in RPI-RP2, reflash it`.
+
+**Validation.** Recover a deliberately armed half: build with `BKSF_TEST_ARM`, press
+the trigger (`crc now=0x00000000 (armed=1)`), then power-cycle → the half comes up as
+`RPI-RP2`; flash a normal UF2 and confirm it boots and types. *(HW verification
+pending -- the user runs this.)*
+
 ---
 
 ## Part 10 — Bootmagic trigger (start the update at power-on)
@@ -823,9 +933,9 @@ version/CRC guard in the image header (Part 9). Confirmed.
 | T10.4a | 2026-11-12 | **Interim argos change (prep for T10.4).** Decoupled the build-id gate: `ARGOS_DISABLE_BUILD_ID_GATE` now only suppresses the key block (`process_record_argos`); the red mismatch indication (`RGB_MATRIX_BREATHING` + `HSV_RED`) always runs (master `housekeeping_task_argos`, slave `argos_build_id_sync_handler`). Vendor keymap keeps the flag → reflashed-one-side board flashes red but still types. Red test pair `bksf_dilemma_mismatch_{A,B}.uf2` via `bash /home/quinn/bksf_mismatch_images.sh`. | compile; **HW confirmed** typing works on a mismatched pair (red indication not separately confirmed) |
 | T8.1 | 2026-11-12 | `BKSF_TEST_STAGING` (10) + `bksf_verify_staging_peer()` (`bk_split_flash_flash.c`): reads the staging region at `bksf_get_staging_window()` and compares it byte-for-byte to the embedded peer (length + CRC32 + a differing-byte count), logging `MATCH`/`MISMATCH`. Read-only. Offline: staged sidecar == embedded blob, peer CRC32 (firmware algo) = `0xD41659BA`. | offline; **HW verification pending** (drag the combined UF2 → `RPI-RP2`, press `BKSFTRG`) |
 | T8.2 | 2026-11-12 | Per-build combined UF2. New module **`post_rules.mk`** (the QMK post-build hook) adds target `bksf-combined-uf2` (prereq of `all`), and **`tools/make_combined_uf2.py`** emits `<TARGET>_combined.uf2` = app at `0x10000000` + peer at `0x10000000 + staging_start`, where `staging_start` = `__flash_binary_end` (read from the ELF `.symtab`) rounded up to 4096 B. Peer comes from the new raw sidecar `bk_split_flash_peer_image.bin` (written by `gen_peer_image.py` alongside the `.c`, byte-identical to the embedded blob). Runs only when blob+sidecar are present; no-op otherwise; the normal `<TARGET>.uf2` is never touched. Offline: combined 1148 blocks / 587776 B; app region == normal UF2 (195584 B); staged peer == sidecar; family 0xE48BFF56 preserved. `__flash_binary_end=0x1002FBE4` → staging offset `0x30000`. | offline (combined UF2 parsed + regions compared); **HW verification pending** |
-| T9.1 | | | |
-| T9.2 | | | |
-| T9.3 | | | |
+| T9.1 | 2026-11-12 | Version/CRC image guard. New `bk_split_flash_image.h` (`bksf_image_hdr_t` descriptor: magic/hdr_version/proto_version/len/crc). `gen_peer_image.py` emits `bksf_peer_image_hdr` (proto read from `bk_split_flash_proto.h`, `--proto-version` override) and self-checks its CRC32 port against the image boot2 checksum. `bksf_validate_image()` checks magic/hdr/proto/len/CRC/staging-fit and is called before ARM in `bksf_begin_update` and `bksf_self_update_from_peer_hold`; failure logs `peer image rejected: <reason> -> not armed`. Offline: descriptor crc `0x3C3BD13A` matches the generated blob. | offline; **HW verification pending** (`bksf_dilemma_T9_bad_peer.uf2` → press trigger → `rejected: protocol version mismatch`, red) |
+| T9.2 | 2026-11-12 | "Flash pending" RGB indicator. `bksf_set_state()`/`bksf_tick_state()`; master state machine + slave RPC handler set IDLE/PREPARE/ARMED/COPYING/COMMITTING/ERROR (ERROR auto-clears after `BKSF_ERROR_HOLD_MS` 3000). `rgb_matrix_indicators_advanced_bk_split_flash()` paints the half's LED range per state (white/amber/blue/magenta/red); IDLE leaves the effect alone; runs last (after argos). RGB only (no LED matrix/OLED). | compile; **HW verification pending** (`bksf_dilemma_T9_{slave_update,both_update}.uf2`) |
+| T9.3 | 2026-11-12 | Documented recovery procedure (see "Part 9 recovery procedure"): double-tap reset preferred, BOOTSEL fallback, flash a matching image to both halves, slave USB reachable so no A/B fallback; diagnostic log lines listed. Written here; validation (recover a deliberately armed half) is the user's. | doc; **HW validation pending** |
 | T10.1 | | | |
 | T10.2 | | | |
 | T10.3 | | | |
@@ -936,8 +1046,18 @@ app is halted in `chSysHalt`, so QMK's double-tap-reset won't help. Hold the
   Part 7 is HW-verified (clean `UPDATE_SLAVE` stream works; the B1/B2 corruption
   cases and the `UPDATE_BOTH` convergence image are built but not separately
   reported). Part 6 (host flashing) remains deferred.
-- **NEXT TASK — Part 9** (guard rails and recovery: version/CRC guard, "flash
-  pending" indicator, documented recovery) once Part 8 is HW-verified.
+- **Part 9 — CODE COMPLETE, HW VERIFICATION PENDING (2026-11-12).** T9.1 version/CRC
+  image guard (`bk_split_flash_image.h` descriptor + `bksf_validate_image()` before
+  ARM); T9.2 RGB "flash pending" indicator (`rgb_matrix_indicators_advanced_bk_split_flash`,
+  state set by the master state machine and slave handler); T9.3 recovery procedure
+  documented. Passes offline (descriptor CRC matches the blob). **Next:** flash
+  `bksf_images/bksf_dilemma_T9_bad_peer.uf2` → trigger → expect
+  `peer image rejected: protocol version mismatch -> not armed` (+ red); then
+  `bksf_dilemma_T9_both_update.uf2` → trigger → watch amber→blue→magenta on both
+  halves. Rebuild the set with `bash /home/quinn/bksf_t9_images.sh`. See "Part 9
+  bring-up" and "Part 9 recovery procedure" (T9.3).
+- **NEXT TASK — Part 10** (bootmagic trigger: start the update by holding a key at
+  power-on) once Part 8/9 are HW-verified.
 - **Protocol v2 (2026-11-11):** proto bumped 1 → 2 and `BKSF_MSG_DATA_SIZE` shrank
   24 → 20 to make room for the `crc` field (struct stays 32 B). Both halves must be
   rebuilt from this code, and the peer image **must be regenerated** from it before

@@ -242,9 +242,13 @@ Confirm the ROM mass-storage writer accepts the staging addresses (a UF2 block c
 > 2. Resolved: single-half master self-flash first (Parts 1–2), then both halves.
 > 3. Resolved: const-blob (A) for v1, host→master raw HID (B) as end state.
 > 4. Resolved: skeletyl staging = `0x1A0000` (≈1.62 MiB); peer image fits.
-> 5. Open: recovery story for a bricked slave (physical access / BOOTSEL button / A/B).
+> 5. Resolved (2026-11-12, T9.3): recovery is BOOTSEL/double-tap reset on either
+>    half (the slave exposes USB per Decision 1), so no A/B fallback is needed; the
+>    procedure is in the parts plan's "Part 9 recovery procedure".
 > 6. Resolved: module keycode `BKSFTRG` for bring-up; LED/OLED "flash pending" state.
-> 7. Resolved: version/CRC header guard, validated before ARM.
+> 7. Resolved (2026-11-12, T9.1): version/CRC image descriptor (`bksf_image_hdr_t`,
+>    `bk_split_flash_image.h`), validated before ARM; a mismatched image is refused
+>    and the ERROR indicator flashes red.
 
 1. **Does the slave half expose USB?** Determines whether the slave may be armed at all. (Blocking for §8 slave path.)
 2. **Scope of first milestone:** single-half self-flash only (safest, proves arm/commit) vs. both halves immediately.

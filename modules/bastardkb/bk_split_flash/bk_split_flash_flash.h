@@ -7,6 +7,8 @@
 #include <stddef.h>
 #include <stdbool.h>
 
+#include "bk_split_flash_image.h"
+
 // bk_split_flash -- flash introspection and (later) the RAM-resident flasher.
 //
 // Part 1 is read-only: nothing here writes to flash. The erase/program/commit
@@ -116,3 +118,14 @@ bool bksf_staging_flush_sector(uint32_t dst_off);
 // Accessors for the (weakly defined) compiled-in peer image.
 const uint8_t *bksf_peer_image_ptr(void);
 uint32_t       bksf_peer_image_size(void);
+
+// T9.1: accessor for the compiled-in peer image descriptor (the "header").
+// Returns NULL when no peer image is compiled in.
+const bksf_image_hdr_t *bksf_peer_image_hdr_ptr(void);
+
+// T9.1: validate a distributable image against its descriptor and the running
+// firmware's expectations (descriptor magic/format, protocol version, length,
+// CRC32, and staging fit). Returns true if the image may be distributed; on
+// false, writes a short human-readable reason into `why` (if non-NULL). Pure
+// computation -- nothing is written and nothing is armed.
+bool bksf_validate_image(const uint8_t *img, uint32_t len, const bksf_image_hdr_t *hdr, char *why, size_t why_len);

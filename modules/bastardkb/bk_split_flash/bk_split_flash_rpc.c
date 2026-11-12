@@ -191,9 +191,13 @@ static void bksf_rpc_handle(uint8_t in_len, const void *in_data, uint8_t out_len
                 reply.cmd    = BKSF_CMD_ARMED;
                 reply.status = bksf_arm() ? BKSF_ST_OK : BKSF_ST_ERR;
                 reply.value  = bksf_boot2_crc_stored();
+                bksf_set_state(reply.status == BKSF_ST_OK ? BKSF_STATE_ARMED : BKSF_STATE_ERROR);
                 break;
             case BKSF_CMD_BEGIN:
                 bksf_rxp_begin(&reply, &msg);
+                if (reply.status == BKSF_ST_OK) {
+                    bksf_set_state(BKSF_STATE_COPYING);
+                }
                 break;
             case BKSF_CMD_CHUNK:
                 bksf_rxp_chunk(&reply, &msg);
@@ -217,11 +221,13 @@ static void bksf_rpc_handle(uint8_t in_len, const void *in_data, uint8_t out_len
                 }
                 // Never returns: applies the staged image and resets into it.
                 uprintf("bksf: slave commit %u bytes -> apply+reset\n", (unsigned)rxp_len);
+                bksf_set_state(BKSF_STATE_COMMITTING);
                 bksf_apply_and_reset((const uint8_t *)(uintptr_t)(BKSF_XIP_BASE + rxp_staging), rxp_len);
                 break;
             case BKSF_CMD_ABORT:
                 rxp_active = false;
                 reply.cmd  = BKSF_CMD_DONE;
+                bksf_set_state(BKSF_STATE_IDLE);
                 break;
             default:
                 reply.status = BKSF_ST_BADCMD;
@@ -337,6 +343,7 @@ static void bksf_abort(const char *why) {
     }
     bksf_rpc_send(BKSF_CMD_ABORT, 0, NULL, 0);
     bksf_bulk_resume();
+    bksf_set_state(BKSF_STATE_ERROR);
     sync_state = BKSF_SYNC_IDLE;
 }
 
@@ -395,12 +402,23 @@ static bool bksf_begin_update(void) {
         return false;
     }
 
+    // T9.1: version/CRC guard. Validate the image against its descriptor and the
+    // running build's expectations *before* anything is armed or staged; a bad
+    // or incompatible image is refused here, so the slave is never armed for it.
+    char why[48];
+    if (!bksf_validate_image(img, len, bksf_peer_image_hdr_ptr(), why, sizeof(why))) {
+        uprintf("bksf: peer image rejected: %s -> not armed\n", why);
+        bksf_set_state(BKSF_STATE_ERROR);
+        return false;
+    }
+
     up_img = img;
     up_len = len;
     up_off = 0;
     up_crc = bksf_crc32(img, len);
 
     uprintf("bksf: slave update start len=%u crc=0x%08X\n", (unsigned)up_len, (unsigned)up_crc);
+    bksf_set_state(BKSF_STATE_PREPARE);
     sync_state    = BKSF_SYNC_ARM;
     sync_tries    = 0;
     sync_deadline = timer_read32() + BKSF_RPC_TIMEOUT_MS;
@@ -424,6 +442,9 @@ void bksf_start_both_update(void) {
 
 void housekeeping_task_bk_split_flash(void) {
     housekeeping_task_bk_split_flash_kb();
+
+    // T9.2: age out the transient ERROR indicator state.
+    bksf_tick_state();
 
     // Slave side: flush a buffered sector here, never inside the RPC callback
     // (an erase/program takes tens of ms and would blow the reply timeout). The
@@ -459,6 +480,7 @@ void housekeeping_task_bk_split_flash(void) {
             sync_tries++;
             if (bksf_rpc_send(BKSF_CMD_ARM, 0, NULL, 0) && last_reply.cmd == BKSF_CMD_ARMED && last_reply.status == BKSF_ST_OK) {
                 uprintf("bksf: slave ARMED (crc=0x%08X)\n", (unsigned)last_reply.value);
+                bksf_set_state(BKSF_STATE_ARMED);
                 sync_state    = BKSF_SYNC_BEGIN;
                 sync_tries    = 0;
                 sync_deadline = timer_read32();
@@ -480,6 +502,7 @@ void housekeeping_task_bk_split_flash(void) {
                 // T7.2: the bulk data phase starts now; quiesce normal module
                 // split activity until the last sector is durably written.
                 bksf_bulk_quiesce();
+                bksf_set_state(BKSF_STATE_COPYING);
                 sync_state    = BKSF_SYNC_CHUNKS;
                 up_off        = 0;
                 sync_deadline = timer_read32();
@@ -617,6 +640,7 @@ void housekeeping_task_bk_split_flash(void) {
         case BKSF_SYNC_COMMIT:
             uprintf("bksf: slave COMMIT (slave will reboot)\n");
             bksf_rpc_send(BKSF_CMD_COMMIT, 0, NULL, 0);
+            bksf_set_state(BKSF_STATE_COMMITTING);
             sync_state         = BKSF_SYNC_REJOIN;
             up_rejoin_deadline = timer_read32() + BKSF_REJOIN_TIMEOUT_MS;
             sync_deadline      = timer_read32() + 500;
@@ -626,6 +650,7 @@ void housekeeping_task_bk_split_flash(void) {
             if (bksf_rpc_send(BKSF_CMD_NONE, 0, NULL, 0)) {
                 uprintf("bksf: slave rejoined -> DONE\n");
                 sync_state = BKSF_SYNC_IDLE;
+                bksf_set_state(BKSF_STATE_IDLE);
                 // T5.1: with the slave done and back, update the master last so
                 // both halves end on the same build. Runs from here (the master's
                 // main loop) and never returns once the apply begins; if it fails

@@ -15,9 +15,62 @@ ASSERT_COMMUNITY_MODULES_MIN_API_VERSION(1, 1, 1);
 
 static bksf_state_t bksf_state = BKSF_STATE_IDLE;
 
+// T9.2: ERROR is a transient indication -- shown briefly, then back to IDLE so a
+// failed run does not leave the board painted forever. 0 = no auto-clear.
+#ifndef BKSF_ERROR_HOLD_MS
+#    define BKSF_ERROR_HOLD_MS 3000u
+#endif
+static uint32_t bksf_state_until = 0;
+
 bksf_state_t bksf_get_state(void) {
     return bksf_state;
 }
+
+void bksf_set_state(bksf_state_t state) {
+    bksf_state       = state;
+    bksf_state_until = (state == BKSF_STATE_ERROR) ? (timer_read32() + BKSF_ERROR_HOLD_MS) : 0u;
+}
+
+void bksf_tick_state(void) {
+    if (bksf_state == BKSF_STATE_ERROR && bksf_state_until != 0u && (int32_t)(timer_read32() - bksf_state_until) >= 0) {
+        bksf_state       = BKSF_STATE_IDLE;
+        bksf_state_until = 0u;
+    }
+}
+
+// T9.2: "flash pending" indicator on the per-key/underglow RGB. Renders the
+// shared update state; IDLE leaves the running effect untouched. bk_split_flash
+// is last in the module list, so this runs after argos and overrides its colors
+// while a run is in flight.
+#ifdef RGB_MATRIX_ENABLE
+bool rgb_matrix_indicators_advanced_bk_split_flash(uint8_t led_min, uint8_t led_max) {
+    uint8_t r, g, b;
+    switch (bksf_state) {
+        case BKSF_STATE_PREPARE:
+            r = 0xFF; g = 0xFF; b = 0xFF; // white
+            break;
+        case BKSF_STATE_ARMED:
+            r = 0xFF; g = 0x60; b = 0x00; // amber
+            break;
+        case BKSF_STATE_COPYING:
+            r = 0x00; g = 0x40; b = 0xFF; // blue
+            break;
+        case BKSF_STATE_COMMITTING:
+            r = 0xA0; g = 0x00; b = 0xFF; // magenta
+            break;
+        case BKSF_STATE_ERROR:
+            r = 0xFF; g = 0x00; b = 0x00; // red
+            break;
+        default:
+            return true; // IDLE: leave the running effect alone
+    }
+
+    for (uint8_t i = led_min; i < led_max; i++) {
+        rgb_matrix_set_color(i, r, g, b);
+    }
+    return true;
+}
+#endif
 
 void keyboard_post_init_bk_split_flash(void) {
     keyboard_post_init_bk_split_flash_kb();

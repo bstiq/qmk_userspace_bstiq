@@ -3,6 +3,7 @@
 
 #include "bk_split_flash_flash.h"
 #include "bk_split_flash.h"
+#include "bk_split_flash_proto.h" // BKSF_PROTO_VERSION (T9.1 image guard)
 
 #include <stdint.h>
 #include <stddef.h>
@@ -200,6 +201,7 @@ void __no_inline_not_in_flash_func(bksf_commit_identical)(void) {
 #ifdef BKSF_PEER_IMAGE_PRESENT
 extern const uint8_t  bksf_peer_image[];
 extern const uint32_t bksf_peer_image_len;
+extern const bksf_image_hdr_t bksf_peer_image_hdr;
 
 const uint8_t *bksf_peer_image_ptr(void) {
     return bksf_peer_image;
@@ -207,6 +209,10 @@ const uint8_t *bksf_peer_image_ptr(void) {
 
 uint32_t bksf_peer_image_size(void) {
     return bksf_peer_image_len;
+}
+
+const bksf_image_hdr_t *bksf_peer_image_hdr_ptr(void) {
+    return &bksf_peer_image_hdr;
 }
 #else
 const uint8_t *bksf_peer_image_ptr(void) {
@@ -216,7 +222,59 @@ const uint8_t *bksf_peer_image_ptr(void) {
 uint32_t bksf_peer_image_size(void) {
     return 0u;
 }
+
+const bksf_image_hdr_t *bksf_peer_image_hdr_ptr(void) {
+    return NULL;
+}
 #endif
+
+// T9.1: validate a distributable image against its descriptor and the running
+// build's expectations. Pure computation; the caller refuses the run before ARM
+// if this returns false.
+bool bksf_validate_image(const uint8_t *img, uint32_t len, const bksf_image_hdr_t *hdr, char *why, size_t why_len) {
+#define BKSF_REJECT(reason)                          \
+    do {                                             \
+        if (why != NULL && why_len > 0u) {           \
+            strncpy(why, reason, why_len - 1u);      \
+            why[why_len - 1u] = '\0';                \
+        }                                            \
+        return false;                                \
+    } while (0)
+
+    if (img == NULL || len == 0u) {
+        BKSF_REJECT("no image");
+    }
+    if (hdr == NULL) {
+        BKSF_REJECT("no descriptor");
+    }
+    if ((len & (BKSF_FLASH_SECTOR_SIZE - 1u)) != 0u) {
+        BKSF_REJECT("not sector aligned");
+    }
+    if (hdr->magic != BKSF_IMAGE_MAGIC) {
+        BKSF_REJECT("bad magic");
+    }
+    if (hdr->hdr_version != BKSF_IMAGE_HDR_VERSION) {
+        BKSF_REJECT("bad descriptor version");
+    }
+    if (hdr->proto_version != BKSF_PROTO_VERSION) {
+        BKSF_REJECT("protocol version mismatch");
+    }
+    if (hdr->len != len) {
+        BKSF_REJECT("length mismatch");
+    }
+    if (hdr->crc != bksf_crc32(img, len)) {
+        BKSF_REJECT("CRC mismatch");
+    }
+
+    uint32_t staging_bytes = 0;
+    bksf_get_staging_window(NULL, &staging_bytes);
+    if (len > staging_bytes) {
+        BKSF_REJECT("does not fit staging");
+    }
+
+#undef BKSF_REJECT
+    return true;
+}
 
 // T8.1: verify that the staging region holds exactly the compiled-in peer image.
 // A combined UF2 writes the peer's raw sidecar to the staging address in the same
@@ -415,12 +473,17 @@ void bksf_self_update_from_peer_hold(uint32_t hold_ms) {
         return;
     }
 
-    uint32_t start = 0;
-    uint32_t bytes = 0;
-    if (!bksf_get_staging_window(&start, &bytes) || len > bytes) {
-        uprintf("bksf: peer image (%u) does not fit staging (%u)\n", (unsigned)len, (unsigned)bytes);
+    // T9.1: the same version/CRC guard as the distribution path -- refuse a bad
+    // or incompatible image before staging/arming anything.
+    char why[48];
+    if (!bksf_validate_image(img, len, bksf_peer_image_hdr_ptr(), why, sizeof(why))) {
+        uprintf("bksf: peer image rejected: %s -> not armed\n", why);
         return;
     }
+
+    uint32_t start = 0;
+    uint32_t bytes = 0;
+    bksf_get_staging_window(&start, &bytes);
 
     uprintf("bksf: stage %u bytes -> 0x%05X\n", (unsigned)len, (unsigned)start);
     if (!bksf_stage_image(img, len)) {

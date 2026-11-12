@@ -97,6 +97,23 @@ redefinition).
   sidecar `.bin`. The combined step is gated on the `.c`, so a peer build must remove
   the `.c` (a leftover `.bin` alone is not enough to trigger it).
 
+## Guard rails and indicator (Part 9)
+
+- **Image descriptor (T9.1).** `bk_split_flash_image.h` defines `bksf_image_hdr_t`
+  (`magic 0xB5F71A6E`, `hdr_version 1`, `proto_version`, `len`, `crc`).
+  `gen_peer_image.py` writes `const bksf_image_hdr_t bksf_peer_image_hdr` beside the
+  blob; it reads `BKSF_PROTO_VERSION` from `bk_split_flash_proto.h` (so the peer
+  stamps the code it was built from) and `--proto-version N` overrides it to
+  reproduce an incompatible image. `bksf_validate_image()` (checks magic / descriptor
+  version / proto / len / CRC / staging fit) runs **before ARM** in
+  `bksf_begin_update` and `bksf_self_update_from_peer_hold`; failure logs
+  `bksf: peer image rejected: <reason> -> not armed`.
+- **Indicator (T9.2).** `bksf_set_state()`/`bksf_tick_state()` (ERROR auto-clears
+  after `BKSF_ERROR_HOLD_MS` 3000 ms); `rgb_matrix_indicators_advanced_bk_split_flash()`
+  paints the half per state (white/amber/blue/magenta/red), IDLE leaves the effect
+  alone. `bk_split_flash` is last in the keymap `modules` list so it runs after argos
+  and overrides it. RGB only — no LED matrix, no OLED (user, 2026-11-12).
+
 ## Layout
 
 - Module: `modules/bastardkb/bk_split_flash/` — sources named `bk_split_flash_*`,
@@ -127,6 +144,9 @@ redefinition).
 
 - `bash /home/quinn/bksf_gen_images.sh` — the bk_split_flash test image set (rebuilds
   the peer from current code first, then the carriers; restores `config.h`).
+- `bash /home/quinn/bksf_t9_images.sh` — the Part 9 set (`bksf_dilemma_T9_{peer,
+  slave_update,both_update,bad_peer}.uf2`; `bad_peer` embeds a descriptor with
+  `--proto-version 1` to test the guard).
 - `bash /home/quinn/bksf_mismatch_images.sh` — the argos red-mismatch test pair.
 
 ## QMK build system facts
