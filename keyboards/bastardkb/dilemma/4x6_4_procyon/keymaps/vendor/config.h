@@ -17,6 +17,14 @@
  */
 #pragma once
 
+/* Split serial link speed. bk_split_flash streams the whole peer image over the
+ * half-duplex PIO link, so the transfer is wire-bound: 400 KB takes ~18 s at the
+ * QMK default (SELECT_SOFT_SERIAL_SPEED 1 = 230400). Run it at 460800 (speed 0)
+ * for ~2x. This is the one hardware-sensitive knob here -- if the split link is
+ * flaky at 460800, drop back to 1 (or try SERIAL_USART_SPEED directly).
+ *   speed 0 = 460800, 1 = 230400 (default), 2 = 115200, ... */
+#define SELECT_SOFT_SERIAL_SPEED 0
+
 #define DYNAMIC_KEYMAP_LAYER_COUNT 8
 #define SPLIT_LAYER_STATE_ENABLE
 #define SPLIT_LED_STATE_ENABLE

@@ -936,6 +936,7 @@ version/CRC guard in the image header (Part 9). Confirmed.
 | T9.1 | 2026-11-12 | Version/CRC image guard. New `bk_split_flash_image.h` (`bksf_image_hdr_t` descriptor: magic/hdr_version/proto_version/len/crc). `gen_peer_image.py` emits `bksf_peer_image_hdr` (proto read from `bk_split_flash_proto.h`, `--proto-version` override) and self-checks its CRC32 port against the image boot2 checksum. `bksf_validate_image()` checks magic/hdr/proto/len/CRC/staging-fit and is called before ARM in `bksf_begin_update` and `bksf_self_update_from_peer_hold`; failure logs `peer image rejected: <reason> -> not armed`. Offline: descriptor crc `0x3C3BD13A` matches the generated blob. | offline; **HW verification pending** (`bksf_dilemma_T9_bad_peer.uf2` → press trigger → `rejected: protocol version mismatch`, red) |
 | T9.2 | 2026-11-12 | "Flash pending" RGB indicator. `bksf_set_state()`/`bksf_tick_state()`; master state machine + slave RPC handler set IDLE/PREPARE/ARMED/COPYING/COMMITTING/ERROR (ERROR auto-clears after `BKSF_ERROR_HOLD_MS` 3000). `rgb_matrix_indicators_advanced_bk_split_flash()` paints the half's LED range per state (white/amber/blue/magenta/red); IDLE leaves the effect alone; runs last (after argos). RGB only (no LED matrix/OLED). | compile; **HW verification pending** (`bksf_dilemma_T9_{slave_update,both_update}.uf2`) |
 | T9.3 | 2026-11-12 | Documented recovery procedure (see "Part 9 recovery procedure"): double-tap reset preferred, BOOTSEL fallback, flash a matching image to both halves, slave USB reachable so no A/B fallback; diagnostic log lines listed. Written here; validation (recover a deliberately armed half) is the user's. | doc; **HW validation pending** |
+| TP1 | 2026-11-12 | **Throughput pass (ad-hoc, user-requested: "~20 s, want it fast").** Three changes: (1) split link **230400 → 460800** via `SELECT_SOFT_SERIAL_SPEED 0` in the vendor keymap `config.h` — the wire transfer dominates for a large image (400 KB ≈ 18 s at 230400); (2) per-sector flush stall `BKSF_SECTOR_PACE_MS` **150 → 60 ms** + fast `BKSF_FLUSH_RETRY_MS 20` poll (the old flat 150 ms wasted ~100 ms/sector ≈ 15 s over a 100-sector image); (3) rejoin presence poll `BKSF_REJOIN_POLL_MS` **500 → 100 ms** (was adding up to 500 ms tail latency). Also corrected the `bk_split_flash_pack.h` sizing comment. Compiles clean; baud confirmed in the ELF (a single `float 3686400.0f` = 8×460800). | compile + ELF check; **HW verification pending** (the 460800 link is the hardware-sensitive part) |
 | T10.1 | | | |
 | T10.2 | | | |
 | T10.3 | | | |
@@ -1056,6 +1057,17 @@ app is halted in `chSysHalt`, so QMK's double-tap-reset won't help. Hold the
   `bksf_dilemma_T9_both_update.uf2` → trigger → watch amber→blue→magenta on both
   halves. Rebuild the set with `bash /home/quinn/bksf_t9_images.sh`. See "Part 9
   bring-up" and "Part 9 recovery procedure" (T9.3).
+- **Throughput pass — CODE COMPLETE, HW VERIFICATION PENDING (2026-11-12, TP1).** A
+  large image was slow (~20 s) because it was wire-bound at the QMK default
+  **230400** and had two self-inflicted stalls. Fixes: split link **460800**
+  (`SELECT_SOFT_SERIAL_SPEED 0`, vendor keymap `config.h`); flush stall **150 → 60 ms**
+  (`BKSF_SECTOR_PACE_MS`, + `BKSF_FLUSH_RETRY_MS 20`); rejoin poll **500 → 100 ms**
+  (`BKSF_REJOIN_POLL_MS`). Expected: 400 KB ≈ 18 s wire + 15 s flush → ~9 s + ~6 s.
+  Remaining costs, not yet addressed: the **rejoin wait** (slave erase/copy/reboot,
+  ~6.5 s; argos's 256 KB EEPROM wipe alone is ~3 s) and the fact that the slave is
+  deaf (IRQs off) during every sector erase, so the master *must* stall ~one erase per
+  sector (~50 ms floor). **The 460800 link is the thing to verify first** — if it is
+  flaky, drop `SELECT_SOFT_SERIAL_SPEED` back to 1 in the vendor keymap `config.h`.
 - **NEXT TASK — Part 10** (bootmagic trigger: start the update by holding a key at
   power-on) once Part 8/9 are HW-verified.
 - **Protocol v2 (2026-11-11):** proto bumped 1 → 2 and `BKSF_MSG_DATA_SIZE` shrank

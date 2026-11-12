@@ -258,9 +258,16 @@ void bksf_rpc_init(void) {
 #    define BKSF_RPC_MAX_TRIES 3
 #    define BKSF_CHUNKS_PER_TICK 4
 #    define BKSF_CHUNK_PACE_MS 2         // give the slave's loop time between chunks
-#    define BKSF_SECTOR_PACE_MS 150      // let the slave flush a sector (erase+program) before the next one
-#    define BKSF_FLUSH_MAX_TRIES 30      // ~4.5 s of slack per sector
+// A 4 KiB staging flush is erase (~45 ms typ) + program (~7 ms) + read-back. The
+// old flat 150 ms pace stalled the master for roughly 3x the real flush time on
+// every sector. Wait just long enough for the first poll to land after a typical
+// flush, then poll quickly; the slave is deaf (IRQs off) while erasing, so an
+// early poll costs only one RPC timeout and is retried.
+#    define BKSF_SECTOR_PACE_MS 60       // first flush poll: ~ one typical 4 KiB erase+program
+#    define BKSF_FLUSH_RETRY_MS 20       // subsequent polls while the flush is still running
+#    define BKSF_FLUSH_MAX_TRIES 30      // plenty of slack per sector (long/aged erases)
 #    define BKSF_REJOIN_TIMEOUT_MS 15000 // EEPROM wipe (~3 s) + app copy (~1 s) + reboot
+#    define BKSF_REJOIN_POLL_MS 100      // rejoin presence cadence (was a flat 500 ms)
 #    define BKSF_PEER_PROBE_MS 1000     // peer-presence watchdog cadence
 #    define BKSF_PEER_MISS_MAX 3        // consecutive misses before declaring it lost
 #    define BKSF_RESYNC_BACKOFF_MS 60   // wait out a sector flush before probing rxp_off
@@ -619,7 +626,7 @@ void housekeeping_task_bk_split_flash(void) {
                 sync_deadline = timer_read32();
                 return;
             }
-            sync_deadline = timer_read32() + BKSF_SECTOR_PACE_MS;
+            sync_deadline = timer_read32() + BKSF_FLUSH_RETRY_MS;
             return;
 
         case BKSF_SYNC_VERIFY:
@@ -643,7 +650,7 @@ void housekeeping_task_bk_split_flash(void) {
             bksf_set_state(BKSF_STATE_COMMITTING);
             sync_state         = BKSF_SYNC_REJOIN;
             up_rejoin_deadline = timer_read32() + BKSF_REJOIN_TIMEOUT_MS;
-            sync_deadline      = timer_read32() + 500;
+            sync_deadline      = timer_read32() + BKSF_REJOIN_POLL_MS;
             return;
 
         case BKSF_SYNC_REJOIN:
@@ -668,7 +675,7 @@ void housekeeping_task_bk_split_flash(void) {
                 sync_state = BKSF_SYNC_IDLE;
                 return;
             }
-            sync_deadline = timer_read32() + 500;
+            sync_deadline = timer_read32() + BKSF_REJOIN_POLL_MS;
             return;
 
         default:

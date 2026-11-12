@@ -24,8 +24,11 @@
 // Sizing: the transport's transaction descriptor sizes are `uint8_t`, so a
 // frame must fit in 255 B. `BKSF_BULK_CHUNK` is the payload budget; the frame
 // adds a 16 B header. The chunk must also complete inside the driver's
-// `SERIAL_USART_TIMEOUT` (20 ms): at 230400 8E2 (~20945 B/s) 240 B takes
-// ~11.5 ms, so keep `BKSF_BULK_CHUNK` at or below 224.
+// `SERIAL_USART_TIMEOUT` (20 ms): at 230400 10-bits/byte (~23040 B/s) 240 B takes
+// ~10.4 ms, and at 460800 (the split link speed this board runs) ~5.2 ms, so
+// `BKSF_BULK_CHUNK` 224 (240 B frame) is safe with margin either way. Throughput
+// is wire-bound, so the serial baud dominates; the per-chunk header+ack cost
+// (16 B header + 2 B handshake + 12 B ack) is only ~12% on top of the payload.
 
 #define BKSF_BULK_MAGIC 0xB5F7B0C1u
 #define BKSF_BULK_ACK_MAGIC 0xB5F7AC40u
