@@ -218,6 +218,43 @@ uint32_t bksf_peer_image_size(void) {
 }
 #endif
 
+// T8.1: verify that the staging region holds exactly the compiled-in peer image.
+// A combined UF2 writes the peer's raw sidecar to the staging address in the same
+// BOOTSEL pass as the app; this confirms the ROM mass-storage writer accepted that
+// block by comparing the staged bytes (size + CRC32, and a byte count) against the
+// embedded blob, which is byte-identical to the sidecar. Read-only.
+void bksf_verify_staging_peer(void) {
+    uint32_t start = 0;
+    uint32_t bytes = 0;
+    bksf_get_staging_window(&start, &bytes);
+    uprintf("bksf: staging verify: window start=0x%05X bytes=%u (XIP 0x%08X)\n", (unsigned)start, (unsigned)bytes, (unsigned)(BKSF_XIP_BASE + start));
+
+    const uint8_t *peer = bksf_peer_image_ptr();
+    uint32_t       plen = bksf_peer_image_size();
+    if (plen == 0u) {
+        uprintf("bksf: staging verify: no peer image compiled in (see tools/gen_peer_image.py)\n");
+        return;
+    }
+    if (plen > bytes) {
+        uprintf("bksf: staging verify: peer (%u) larger than staging (%u) -> INCONCLUSIVE\n", (unsigned)plen, (unsigned)bytes);
+        return;
+    }
+
+    const uint8_t *staged     = (const uint8_t *)(uintptr_t)(BKSF_XIP_BASE + start);
+    uint32_t       staged_crc = bksf_crc32(staged, plen);
+    uint32_t       peer_crc   = bksf_crc32(peer, plen);
+
+    uint32_t diff = 0;
+    for (uint32_t i = 0; i < plen; i++) {
+        if (staged[i] != peer[i]) {
+            diff++;
+        }
+    }
+
+    bool match = (staged_crc == peer_crc) && (diff == 0u);
+    uprintf("bksf: staging peer len=%u crc staged=0x%08X peer=0x%08X diff=%u -> %s\n", (unsigned)plen, (unsigned)staged_crc, (unsigned)peer_crc, (unsigned)diff, match ? "MATCH" : "MISMATCH");
+}
+
 // Scratch for one sector. In .bss (RAM), so it survives the app being erased.
 static uint8_t bksf_bounce[BKSF_FLASH_SECTOR_SIZE];
 

@@ -4,12 +4,14 @@
 
 **Source design:** `docs/superpowers/plans/2026-11-10-split-flash-both-halves.md`
 **Goal:** Update **both** halves of an RP2040 split keyboard from the USB master half, with a boot2-CRC fail-safe that guarantees an interrupted update lands each half in `RPI-RP2` BOOTSEL instead of a brick.
-**Status:** In progress. **Parts 1–5 complete and HW-verified** (T0–T4.3 on the
+**Status:** In progress. **Parts 1–7 complete and HW-verified** (T0–T4.3 on the
 charybdis 4x6 and dilemma 4x6 procyon; T5.1/T5.2 on the dilemma 4x6 procyon, with a
-few non-timed master cases assumed). **Part 6 (host flashing) DEFERRED and NOT
-STARTED** (user, 2026-11-11; a partial implementation was reverted). **Next: Part 7**
-(bulk USART transport). See the "WHERE WE ARE" resume point below and the "Local
-build environment" section.
+few non-timed master cases assumed; T7.1/T7.2 bulk transport on the dilemma 4x6
+procyon). **Part 6 (host flashing) DEFERRED and NOT STARTED** (user, 2026-11-11; a
+partial implementation was reverted). **Part 8 (combined-UF2 packaging) is code
+complete and passes offline checks; HW verification pending.** **Next: Part 9**
+(guard rails and recovery) after the Part 8 HW check. See the "WHERE WE ARE" resume
+point below and the "Local build environment" section.
 
 ---
 
@@ -475,6 +477,65 @@ artifacts, staging start, `uf2conv.py`) live in `agents/working-notes.md`.
 6. **When the step runs — only when a peer is present.** The post-build step runs
    only for carrier builds (peer sidecar/blob present); otherwise it is skipped.
 
+### Part 8 bring-up: procedure — dilemma 4x6 procyon (2026-11-12)
+
+Target: **`bastardkb/dilemma/4x6_4_procyon:vendor`** (RP2040, default 2 MB layout,
+same image on both halves). T8.1 confirms the ROM mass-storage writer accepts a UF2
+block at the staging address; T8.2 produces the combined image.
+
+**Images (`bksf_images/`, built 2026-11-12 from the Part 8 code):**
+
+| image | build | what it is |
+|---|---|---|
+| `bksf_dilemma_T8_peer.uf2` | `DUMP` + `BKSF_VERSION "0.1.0-peer"` | peer regenerated from the Part 8 code (192512 B) |
+| `bksf_dilemma_T8_staging.uf2` | `BKSF_TEST_STAGING` + peer embedded | app-only; a normal drag writes the app and **nothing** to staging (391168 B) |
+| `bksf_dilemma_T8_staging_combined.uf2` | same build, packaged by T8.2 | combined: app **+** peer staged at `0x10030000` (587776 B) |
+
+**T8.1 — ROM writer accepts the staging address.** Stage a combined image and let
+the running app verify it:
+
+1. Drag `bksf_dilemma_T8_staging_combined.uf2` onto `RPI-RP2` (double-tap reset →
+   the drive). The ROM writes the app **and** the peer block in one pass.
+2. Link the halves, USB into the master, `qmk console`, press `BKSFTRG`.
+3. Expected **master** log:
+   ```
+   bksf: staging verify: window start=0x30000 bytes=1638400 (XIP 0x10030000)
+   bksf: staging peer len=98304 crc staged=0xD41659BA peer=0xD41659BA diff=0 -> MATCH
+   ```
+   A `MISMATCH` (with `diff != 0`) means the ROM did **not** write the staging
+   block — the T8.1 result to investigate.
+
+**Control (staging not written).** On a half whose staging region is still erased,
+drag `bksf_dilemma_T8_staging.uf2` (app-only) and press `BKSFTRG`: the same line
+reports `-> MISMATCH` with a large `diff`, confirming the check is really reading
+the staged bytes. (Reflashing the combined afterwards restores `MATCH`.)
+
+**T8.2 — one-file delivery.** The combined image *is* the T8.2 output: one drag
+leaves the master running the carrier build with the peer already in staging, so the
+normal trigger (Part 5/7 flow) updates both halves from the embedded blob. The
+staged copy is currently redundant (recon decision 2 keeps the embedded blob as the
+size/CRC source); T8.2 verifies the packaging and address, not a new runtime path.
+
+**Rebuild recipe** (regenerate the peer from current code, then the carrier):
+```bash
+# 1. peer from current code: remove the blob, set DUMP + BKSF_VERSION "0.1.0-peer"
+#    in keyboards/bastardkb/dilemma/4x6_4_procyon/keymaps/vendor/config.h, then:
+rm -f modules/bastardkb/bk_split_flash/bk_split_flash_peer_image.{c,bin}
+qmk compile -kb bastardkb/dilemma/4x6_4_procyon -km vendor -c
+cp -f bastardkb_dilemma_4x6_4_procyon_vendor.uf2 bksf_images/bksf_dilemma_T8_peer.uf2
+
+# 2. blob + sidecar from that peer:
+python3 modules/bastardkb/bk_split_flash/tools/gen_peer_image.py bksf_images/bksf_dilemma_T8_peer.uf2
+
+# 3. carrier: set #undef/#define BKSF_TEST BKSF_TEST_STAGING in the same config.h, then:
+qmk compile -kb bastardkb/dilemma/4x6_4_procyon -km vendor -c
+#    -> <userspace root>/bastardkb_dilemma_4x6_4_procyon_vendor_combined.uf2
+```
+Remove the generated `bk_split_flash_peer_image.{c,bin}` and restore the keymap
+`config.h` afterwards so normal builds carry no 98304 B blob and emit no combined
+file. The module `config.h` is included *before* the keymap `config.h`, so every
+override must `#undef` first (`-Werror` redefinition).
+
 ---
 
 ## Part 9 — Guard rails and recovery
@@ -753,8 +814,8 @@ version/CRC guard in the image header (Part 9). Confirmed.
 | T7.1 | 2026-11-11 | **DONE + HW-verified** (target: dilemma 4x6 procyon). New `bk_split_flash_pack.{c,h}` carry a length-prefixed bulk frame (`magic`+`offset`+`len`+`crc32`+payload) delivered by **one** split transaction on the module's own id via `transport_execute_transaction()` — replacing the 4-transaction RPC path for chunks. The 32 B limit is lifted by enlarging `RPC_M2S_BUFFER_SIZE` to `16 + BKSF_BULK_CHUNK` (`=240`, the transaction size fields are `uint8_t` so a frame must fit 255 B; `_Static_assert`ed in `bk_split_flash_pack.c`). Chunk 20 B → 224 B (bounded by the 20 ms `SERIAL_USART_TIMEOUT`: 240 B ≈ 11.5 ms at 230400 8E2). Per-chunk CRC32 checked before buffering; NACK → master `resync` (unchanged T4.3 logic, now over bulk acks that also report `rxp_off`); the T4.3 injection now targets the image offset (chunk-size independent). Slave-side receive reuses the shared `bksf_rxp_accept()` core (also used by the legacy RPC CHUNK path); `bksf_rpc_handle` dispatches bulk vs control on `in_len` (240 vs 32). Images: `bksf_dilemma_T7_{slave_update,corrupt_recover,corrupt_persist,both_update}.uf2` + regenerated `bksf_dilemma_peer.uf2` (`bash /home/quinn/bksf_gen_images.sh`). | **HW confirmed** (dilemma 4x6 procyon): clean stream works; corruption cases not separately reported |
 | T7.2 | 2026-11-11 | **DONE + HW-verified** (target: dilemma 4x6 procyon). Bulk phase quiesced/resumed at the module boundary: `bksf_bulk_quiesce()` on the BEGIN ack (data phase start) and `bksf_bulk_resume()` when the last sector is durably written (or on ABORT); while quiesced the master's idle peer watchdog is suspended and only the bulk data plane runs. Rationale (recorded): QMK's own matrix/RPC split transactions cannot be globally suspended from a module (no weak hook; `matrix_post_scan`/`transport_master_if_connected` are strong), and they cannot interleave with bulk frames anyway — the transport is master-initiated and single-threaded, and every bulk chunk is itself one atomic transaction. So the quiesce is the module-level gate plus the existing per-sector flush pacing; normal traffic resumes deterministically. | **HW confirmed** (dilemma 4x6 procyon): `bulk phase begin/end` logged, normal typing resumes |
 | T10.4a | 2026-11-12 | **Interim argos change (prep for T10.4).** Decoupled the build-id gate: `ARGOS_DISABLE_BUILD_ID_GATE` now only suppresses the key block (`process_record_argos`); the red mismatch indication (`RGB_MATRIX_BREATHING` + `HSV_RED`) always runs (master `housekeeping_task_argos`, slave `argos_build_id_sync_handler`). Vendor keymap keeps the flag → reflashed-one-side board flashes red but still types. Red test pair `bksf_dilemma_mismatch_{A,B}.uf2` via `bash /home/quinn/bksf_mismatch_images.sh`. | compile; **HW confirmed** typing works on a mismatched pair (red indication not separately confirmed) |
-| T8.1 | | | |
-| T8.2 | | | |
+| T8.1 | 2026-11-12 | `BKSF_TEST_STAGING` (10) + `bksf_verify_staging_peer()` (`bk_split_flash_flash.c`): reads the staging region at `bksf_get_staging_window()` and compares it byte-for-byte to the embedded peer (length + CRC32 + a differing-byte count), logging `MATCH`/`MISMATCH`. Read-only. Offline: staged sidecar == embedded blob, peer CRC32 (firmware algo) = `0xD41659BA`. | offline; **HW verification pending** (drag the combined UF2 → `RPI-RP2`, press `BKSFTRG`) |
+| T8.2 | 2026-11-12 | Per-build combined UF2. New module **`post_rules.mk`** (the QMK post-build hook) adds target `bksf-combined-uf2` (prereq of `all`), and **`tools/make_combined_uf2.py`** emits `<TARGET>_combined.uf2` = app at `0x10000000` + peer at `0x10000000 + staging_start`, where `staging_start` = `__flash_binary_end` (read from the ELF `.symtab`) rounded up to 4096 B. Peer comes from the new raw sidecar `bk_split_flash_peer_image.bin` (written by `gen_peer_image.py` alongside the `.c`, byte-identical to the embedded blob). Runs only when blob+sidecar are present; no-op otherwise; the normal `<TARGET>.uf2` is never touched. Offline: combined 1148 blocks / 587776 B; app region == normal UF2 (195584 B); staged peer == sidecar; family 0xE48BFF56 preserved. `__flash_binary_end=0x1002FBE4` → staging offset `0x30000`. | offline (combined UF2 parsed + regions compared); **HW verification pending** |
 | T9.1 | | | |
 | T9.2 | | | |
 | T9.3 | | | |
@@ -762,6 +823,24 @@ version/CRC guard in the image header (Part 9). Confirmed.
 | T10.2 | | | |
 | T10.3 | | | |
 | T10.4 | | | |
+
+> **T8.2 note — the sidecar `.bin` is not a make prerequisite.** Listing it as one
+> makes QMK's generic `%.bin: %.elf` pattern rule try to *build* it (linking a bogus
+> `bk_split_flash_peer_image.elf`), which clobbers the sidecar and fails the build.
+> It is intentionally not a prerequisite — the `$(wildcard ...)` gate ensures it
+> exists, and any peer change relinks the app (the blob is compiled in), so the
+> uf2/elf prerequisites already trigger a regeneration.
+>
+> **T8.2 note — a failed post-build step still exits 0.** When the recipe fails,
+> `gmake` reports `Error 2` and the traceback is in the build log, but `qmk compile`
+> still exits `0` (QMK/milc behaviour, not specific to this module — reproduced by
+> hiding the tool). A missing `*_combined.uf2` is therefore the signal, not the exit
+> code.
+>
+> **T8 note — rebuilds are never byte-identical.** QMK embeds a compile date/time
+> string (`__DATE__`/`__TIME__`), so two builds of the same source differ by a few
+> bytes in `.rodata` (observed: only the timestamp differed). Compare staged vs.
+> embedded at runtime rather than byte-comparing two build outputs.
 
 ## Part 1 hardware verification checklist (gate before Part 2)
 
@@ -838,10 +917,20 @@ app is halted in `chSysHalt`, so QMK's double-tap-reset won't help. Hold the
   `argos_build_id_sync_handler`. The vendor keymap keeps the flag defined, so a
   reflashed-one-side board **flashes red but still types**. T10.4 retires the flag
   (brick typing), the `BKSFTRG` key, and makes bootmagic the only trigger.
-- **NEXT TASK — Part 8** (combined-UF2 packaging). Part 7 is HW-verified (clean
-  `UPDATE_SLAVE` stream works; the B1/B2 corruption cases and the `UPDATE_BOTH`
-  convergence image are built but not separately reported). Part 6 (host flashing)
-  remains deferred.
+- **Part 8 — CODE COMPLETE, HW VERIFICATION PENDING (2026-11-12).** T8.1
+  (`BKSF_TEST_STAGING` + `bksf_verify_staging_peer()`) and T8.2 (module
+  `post_rules.mk` + `tools/make_combined_uf2.py` → `<TARGET>_combined.uf2`, peer
+  from the new raw sidecar `.bin`) are implemented and pass offline checks (the
+  combined UF2's app region equals the normal UF2; the staged peer equals the
+  sidecar/blob; family preserved). **Next:** the user drags
+  `bksf_images/bksf_dilemma_T8_staging_combined.uf2` to `RPI-RP2` and presses
+  `BKSFTRG` — expect `staging peer len=98304 crc staged=0xD41659BA peer=0xD41659BA
+  diff=0 -> MATCH`. See "Part 8 bring-up" for the images and the control case.
+  Part 7 is HW-verified (clean `UPDATE_SLAVE` stream works; the B1/B2 corruption
+  cases and the `UPDATE_BOTH` convergence image are built but not separately
+  reported). Part 6 (host flashing) remains deferred.
+- **NEXT TASK — Part 9** (guard rails and recovery: version/CRC guard, "flash
+  pending" indicator, documented recovery) once Part 8 is HW-verified.
 - **Protocol v2 (2026-11-11):** proto bumped 1 → 2 and `BKSF_MSG_DATA_SIZE` shrank
   24 → 20 to make room for the `crc` field (struct stays 32 B). Both halves must be
   rebuilt from this code, and the peer image **must be regenerated** from it before

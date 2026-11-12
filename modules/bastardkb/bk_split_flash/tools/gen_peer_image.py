@@ -13,6 +13,13 @@ writes a file with strong definitions so that the T2.5 test can self-flash a
 
 Then flash it and run the BKSF_TEST_UPDATE test.
 
+Two outputs are written next to each other:
+  * `bk_split_flash_peer_image.c` -- the `const uint8_t[]` embedded in the build
+    (e.g. for the T2.5 self-flash and the T4/T5 slave stream).
+  * `bk_split_flash_peer_image.bin` -- the exact same image as a raw sidecar. The
+    T8.2 post-build step packages this sidecar into a combined UF2, so the peer
+    dragged at the staging address is byte-identical to the embedded one.
+
 Accepts a `.uf2` (RP2040 absolute addrs, 0x10000000-based) or a raw `.bin`
 (flash image starting at offset 0). The image is padded to a 4096-byte sector.
 """
@@ -93,7 +100,14 @@ def main():
             % (os.path.basename(args.input), len(img), body)
         )
 
+    # Raw sidecar: the exact same bytes as the embedded blob, for the T8.2
+    # combined-UF2 post-build step (so the packaged peer == the embedded peer).
+    out_bin = os.path.splitext(args.out)[0] + ".bin"
+    with open(out_bin, "wb") as f:
+        f.write(img)
+
     print(f"wrote {args.out}: {len(img)} bytes ({len(img) // SECTOR} sectors)")
+    print(f"wrote {out_bin}: {len(img)} bytes (raw sidecar for combined UF2)")
 
 
 if __name__ == "__main__":

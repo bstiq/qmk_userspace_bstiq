@@ -78,6 +78,11 @@ static void bksf_run_test(void) {
     // T5: update the slave first, then the master self-flashes the same peer
     // image last, so one trigger updates both halves. Housekeeping drives it.
     bksf_start_both_update();
+#elif BKSF_TEST == BKSF_TEST_STAGING
+    // T8.1: confirm a combined UF2's peer block landed at the staging address by
+    // reading the staging region and comparing it to the embedded peer (size +
+    // CRC). Read-only; nothing is written.
+    bksf_verify_staging_peer();
 #endif
 }
 

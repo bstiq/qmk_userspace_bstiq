@@ -42,6 +42,7 @@
 #define BKSF_TEST_RPC 7          // T3: master->slave ARM/ARMED/ABORT handshake
 #define BKSF_TEST_UPDATE_SLAVE 8 // T4: master streams the peer image to the slave and commits
 #define BKSF_TEST_UPDATE_BOTH 9  // T5: master updates the slave, then self-flashes last
+#define BKSF_TEST_STAGING 10     // T8.1: compare the staged region against the embedded peer
 #ifndef BKSF_TEST
 #    define BKSF_TEST BKSF_TEST_DUMP
 #endif

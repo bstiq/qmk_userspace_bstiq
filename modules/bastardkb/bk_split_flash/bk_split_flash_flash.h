@@ -38,6 +38,13 @@ bool bksf_get_staging_window(uint32_t *start_off, uint32_t *size_bytes);
 // staging window. Read-only.
 void bksf_dump_flash_facts(void);
 
+// T8.1: read the staging region and compare it byte-for-byte (size + CRC32)
+// against the compiled-in peer image, logging MATCH or MISMATCH. Used to confirm
+// the ROM mass-storage writer accepted a combined UF2's peer block at the staging
+// address (the packaged peer is the raw sidecar, identical to the embedded blob).
+// Read-only.
+void bksf_verify_staging_peer(void);
+
 // ---------------------------------------------------------------------------
 // Part 2: fail-safe primitives. These WRITE to flash; use only on hardware you
 // can recover (BOOTSEL). See the plan's Part 2 for the ordering rationale.
