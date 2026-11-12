@@ -16,10 +16,6 @@
  */
 #pragma once
 
-/* Split serial link speed is set globally in users/vendor/config.h (625000).
- * splinktegrated_rev1 is half-duplex (single soft-serial pin GP1); rev3 is
- * full-duplex. The bring-up test images override the speed per-build anyway. */
-
 /*
  * Flash size.
  *
@@ -112,13 +108,4 @@
 
 
 
-/* BKSF-CH override start */
-#undef SERIAL_USART_SPEED
-#define SERIAL_USART_SPEED 625000
-#undef BKSF_TEST
-#define BKSF_TEST BKSF_TEST_DUMP
-#undef BKSF_LEGACY_FLUSH
-#define BKSF_LEGACY_FLUSH 0
-#undef BKSF_VERSION
-#define BKSF_VERSION "0.1.0-peer"
-/* BKSF-CH override end */
+
