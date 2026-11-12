@@ -16,6 +16,15 @@
  */
 #pragma once
 
+/* Split serial link speed. Half-duplex PIO serial link (splinktegrated_rev1 uses
+ * the single soft-serial pin GP1; rev3 is full-duplex). bk_split_flash streams the
+ * whole peer image over it, so the transfer is wire-bound: the baud is the hard
+ * ceiling. SELECT_SOFT_SERIAL_SPEED tops out at 460800, so SERIAL_USART_SPEED is
+ * set directly. 625000 gives an exact PIO clock divider (125e6 / (8 * 625000) =
+ * 25.0), so no divider dither; if it is flaky drop to 460800, if clean try 781250
+ * (div 20). The bring-up test images override this per-build anyway. */
+#define SERIAL_USART_SPEED 625000
+
 /*
  * Flash size.
  *
@@ -101,3 +110,15 @@
 
 #undef BKSF_TEST
 #define BKSF_TEST BKSF_TEST_DUMP
+
+
+
+
+/* BKSF-CH override start */
+#undef SERIAL_USART_SPEED
+#define SERIAL_USART_SPEED 625000
+#undef BKSF_TEST
+#define BKSF_TEST BKSF_TEST_UPDATE_SLAVE
+#undef BKSF_LEGACY_FLUSH
+#define BKSF_LEGACY_FLUSH 0
+/* BKSF-CH override end */
