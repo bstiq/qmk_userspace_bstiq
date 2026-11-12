@@ -15,7 +15,7 @@ The intended lever is **removing back-and-forth**: drop the per-chunk ACK and th
 
 | # | Decision | Consequence for the design |
 |---|----------|----------------------------|
-| 1 | **"Anything goes as long as all code stays in the module."** | No QMK core edits. Use only public transport APIs (`transport_execute_transaction`, `transaction_rpc_exec`, `transaction_register_rpc`) and module-owned buffers/state. The `uint8_t` transaction/RPC length (≤255 B) cannot be widened from the module, so frames stay at 240 B. |
+| 1 | **Module code only.** All code lives in `modules/bastardkb/bk_split_flash/`; QMK core source/headers/linker scripts are **never edited**. Core behaviour may be **superseded** only where a QMK community-module mechanism permits it (§2.1). | The baseline uses public transport APIs and module-owned buffers/state. The `uint8_t` transaction/RPC length is a **core type** a module cannot widen, so the standard transaction path stays capped at 240 B frames; bigger frames require a *module-owned* data plane that bypasses the core table, gated on §2.1 / Phase 0. |
 | 2 | **Slave RAM ≈ 256 KB general-purpose pool** (`RP2040_FLASH_TIMECRIT.ld`: ram0 0x20000000, 256 KB → `.data`/`.bss`/heap; last 8 KB are stacks/USB). | A whole-image RAM receive buffer is plausible → primary architecture. Confirm free headroom from the map in Phase 0; a multi-sector ring buffer is the fallback. |
 | 3 | **Per-sector bitmap** for localization. | One 32-byte VERIFY reply can carry up to a 160-sector bitmap (`bksf_msg_t.data[20]`, `bk_split_flash_proto.h:56`); a 256 KB image needs only 8 bytes. Chosen over per-chunk (too much metadata) and whole-image-CRC-only (cannot localize). |
 | 4 | **Success = total wall-clock.** | Optimize the whole run (including the up-front erase phase and final apply), not just the streaming phase. |
@@ -24,6 +24,18 @@ Additional standing constraints:
 - Baud stays at 625000 (10 bits/byte ⇒ ~62.5 kB/s wire ceiling).
 - Both halves run the same build; a protocol mismatch must be refused before arming.
 - No code modifications in this task — this document is the deliverable.
+
+### 2.1 "Supersede through the module" — permitted mechanisms & gate
+
+QMK core files are never modified. Core behaviour may only be replaced by mechanisms a **community module** can use from its own directory:
+
+- **Strong symbol overriding weak core functions** — a module `.c` added to `SRC` (`rules.mk`) defining the same symbol beats a weak QMK definition at link time.
+- **Config macro overrides** — module `config.h` (early) and `post_config.h` (after core config) can `#undef`/`#define` core macros. Already used for `RPC_M2S_BUFFER_SIZE` / `RPC_S2M_BUFFER_SIZE` (`config.h:100`); `SERIAL_USART_TIMEOUT` can be overridden the same way.
+- **Runtime mutation of core tables** — `bksf_bulk_init()` already rewrites `split_transaction_table[RPC_ID_BK_SPLIT_FLASH_CMD]` sizes (`bk_split_flash_pack.c:31`).
+- **Module-owned registrations / build hooks** — `transaction_register_rpc` (`bk_split_flash_rpc.c:261`), `OPT_DEFS`, forced-include headers, and `rules.mk` / `post_rules.mk` rules that live in the module.
+- **Module-owned data plane** — rather than change a core function, bypass it: call exported driver primitives from a module `.c` to implement a raw streaming send, keeping only a module-owned final control message.
+
+**Feasibility gate (Phase 0):** inspect the pinned QMK revision to confirm which target symbols are weak/overridable, which macros are reachable from `config.h`/`post_config.h`, and what low-level driver primitives are exported. If a needed core symbol is strong and non-overridable with no exported primitive, that lever is reworked into a module-owned path or **dropped**. Only §13 lever #5 is contingent on this gate; #1–#4, #6, #7 are pure module code.
 
 ## 3. How communication works today
 
@@ -106,6 +118,7 @@ Master state machine becomes: `ARM → BEGIN → STREAM → VERIFY → RE-STREAM
 - **Phase 2 — fire-and-forget sender** (`bk_split_flash_pack.c/.h`). Add a no-reply chunk send (one-way if Phase 0(c) permits, else minimal reply). Keep the frame CRC. Repurpose `BKSF_CMD_VERIFY` to return the bitmap in `data[]`; bump `BKSF_PROTO_VERSION` (`bk_split_flash_proto.h:20`) and the image descriptor version if its layout changes (`bk_split_flash_image.h`). Both halves must be reflashed together (version guard refuses a mismatched peer before arming).
 - **Phase 3 — apply from RAM** (`bk_split_flash_flash.c`). Pass `rx_buf` to `bksf_apply_and_reset`; retire `bksf_staging_program_sector` / `bksf_staging_erase_sector` / `bksf_staging_flush_sector` (keep behind `BKSF_LEGACY_FLUSH` for A/B). Update `bksf_validate_image` (`bk_split_flash_flash.c:234`) size check from staging-fit to RAM-fit.
 - **Phase 4 — total-wall-clock extras.** For both-halves updates, overlap the master's self-flash with the slave's apply instead of waiting for `REJOIN` (`bk_split_flash_rpc.c:747`); trim `REJOIN` poll cadence. Optional: RLE of the 0xFF-padded tail to cut bytes-on-wire (no baud change).
+- **Phase 5 — delta / differential path (measurement-gated; §13 #1 + #3).** Build **only if** Phase 0 confirms real rebuilds change few sectors. Add a per-sector CRC manifest to `BEGIN`; the slave computes per-sector CRCs of its staging region (which retains the previous image — `bksf_apply_and_reset` copies *from* staging but never erases it) and returns a "changed / unreadable" bitmap; the master streams **only those sectors**. The slave seeds `rx_buf` from staging via XIP and overlays the changed sectors. Then, in `bksf_apply_and_reset`, skip 4 KiB sectors whose new bytes equal the current flash bytes (no erase/program), keeping sector 0 last. **Mandatory fallback:** when staging has no valid previous image (first flash, aborted run, BOOTSEL reflash) or the manifest shows most sectors changed, fall back to full streaming + full apply. If Phase 0 shows a typical rebuild changes most sectors, **drop this phase** rather than build it.
 
 ### Files touched (expected)
 
@@ -133,14 +146,14 @@ Adding the unchanged ~3–4.5 s apply/reboot/rejoin, **total wall-clock improves
 - **Version skew:** bump `BKSF_PROTO_VERSION` and the image descriptor; refuse mixed-version peers before arming (`bk_split_flash_image.h`, `bk_split_flash_flash.c:259`).
 - **Duplicate/out-of-order frames:** the per-sector slot bitmask (set only on a valid-CRC frame at a known offset) makes duplicates harmless.
 - **Re-stream correctness:** bad sectors are never programmed into staging flash (they were never in flash at all under the RAM design), so re-streaming needs no re-erase.
-- **No QMK core edits** — module remains a self-contained community module.
+- **Module code only.** QMK core files are never edited; core behaviour may be superseded only through the community-module mechanisms in §2.1. The §13 levers that touch the transport are gated on that feasibility check; #1–#4, #6, #7 are pure module code.
 
 ## 10. Rejected / deferred alternatives
 
-- **Bigger frames (>255 B, e.g. 4 KiB/transaction):** would cut frame count ~19×, but the `uint8_t` transaction/RPC length lives in QMK core — excluded by the "all code in the module" constraint. Deferred.
+- **Bigger frames (>255 B, e.g. 4 KiB/transaction):** the `uint8_t` transaction/RPC size is a core type that a module **cannot** change, so the standard transaction path stays capped at 240 B. Considered only as a *module-owned* data plane that bypasses the core table — see §13 lever #5, gated on §2.1/Phase 0.
 - **True fire-and-forget via raw low-level send:** conditional on Phase 0(c); if the driver forces a turnaround, keep a trivial per-frame reply (the core win survives).
 - **Whole-image CRC only:** cannot localize damage → would force re-streaming the entire image on failure. Rejected in favour of the per-sector bitmap.
-- **Compression / delta updates (RLE of padding, changed-sector manifest):** optional secondary levers; not required to hit the target.
+- **Compression / delta updates:** optional in the baseline; promoted to primary "even faster" levers in §13 (#1, #7).
 - **Keeping staging-flash program per sector:** slower (deaf windows); replaced by RAM buffering + direct apply.
 
 ## 11. Verification & tests
@@ -158,10 +171,35 @@ Adding the unchanged ~3–4.5 s apply/reboot/rejoin, **total wall-clock improves
 2. Does a zero-length `target2initiator` transaction skip the reply wait on this PIO serial driver (true fire-and-forget)?
 3. Baseline time attribution (which of pace / erase polling / turnarounds / timeouts actually dominates on this board).
 4. Re-read `bksf_apply_and_reset` to reconfirm a RAM source is safe before committing to it.
+5. **Module-supersede gate (§2.1):** against the pinned QMK revision, confirm which split-transport symbols are weak/overridable, which macros `config.h`/`post_config.h` can override, and which low-level driver primitives are exported. Decides whether §13 #5 is possible at all.
+
+## 13. Beyond the baseline — going even faster (module code only)
+
+The §5–§8 baseline drives streaming to ~2.8 s (near the 62.5 kB/s floor) but leaves two larger costs: the **fixed apply/reboot (~3–4.5 s)** and, for small rebuilds, the **2.4 s of wire bytes that mostly did not change**. Every lever below is module code; the one that touches core behaviour (#5) is permitted **only** if supersedable through the §2.1 mechanisms. **These are part of the plan, not just ideas:** #1/#3 are phased as measurement-gated follow-on work in §7 Phase 5 (and are dropped if Phase 0 shows typical rebuilds change most sectors); #2/#4/#6 are additive to Phases 3–4; #5 is gated on §2.1. Highest impact first:
+
+| # | Lever | What it changes | Est. impact | Requirement / risk |
+|---|-------|-----------------|-------------|--------------------|
+| 1 | **Delta (differential) streaming** | After a successful update, `bksf_apply_and_reset` copies *from* staging but never erases it, so the slave still holds the previous peer image. At BEGIN the master sends a per-sector CRC manifest; the slave returns a "changed / unreadable" bitmap; the master streams **only those sectors**. The slave reconstructs the full image in `rx_buf` (XIP copy of old staging + overlay). | For a small change: wire 2.4 s → ~0.1–0.3 s. **High variance**: a rebuild that relocates code can change most sectors. | Measure the per-sector diff between two real builds in Phase 0. Needs a manifest (~4 B/sector) and a way to seed `rx_buf` from staging. |
+| 2 | **Lazy EEPROM wipe** | Drop `bksf_erase_eeprom()` from the armed window (`bk_split_flash_flash.c:431`); let the new firmware invalidate/erase stale settings lazily on first boot via a build-id/generation tag. | Removes up to ~3 s (the `BKSF_REJOIN_TIMEOUT_MS` comment estimates ~3 s for the wipe). | The new build must detect stale EEPROM; add a persisted generation marker. Correctness-critical (settings / argos build id). |
+| 3 | **Delta apply** | In `bksf_apply_and_reset`, compare each 4 KiB sector of `rx_buf` against the current flash sector and **skip identical sectors** (no erase/program). Keep sector 0 written last. | App copy ~2.2 s → ~0.1–0.3 s for a small change. | Same high-variance caveat as #1; never erase a sector whose bytes are unchanged; XIP reads are valid between sector writes. |
+| 4 | **Overlap the two applies (both-halves)** | Kick off the master's self-flash at COMMIT instead of after REJOIN (`bk_split_flash_rpc.c:747`) so both halves apply concurrently. | Saves ~2–4 s on both-halves runs. | The master must still confirm the slave rejoined (do it after its own reboot). |
+| 5 | **Module-owned streaming data plane** (conditional) | **Bypass** the core transaction path (capped at 255 B by a core `uint8_t` type a module cannot change): implement a raw DMA/UART send in a module `.c` that pushes a continuous byte stream into `rx_buf` with **one final control message** — no per-frame framing, acks, or turnarounds. Buffer sizes/timeouts come from `config.h`/`post_config.h`; if the driver's send/recv are weak, supersede them with strong module definitions (§2.1). On full-duplex rev3 the slave can return the bitmap concurrently. | Streaming ~2.8 s → ~2.4 s (pure wire); removes ~0.2 s turnarounds + ~0.18 s headers, and lets #1 go out as one burst. | **Gated on §2.1/Phase 0:** only if a module-usable supersede path exists (weak symbol, exported primitive, or a module-owned transaction with a larger buffer). Override `SERIAL_USART_TIMEOUT` via `post_config.h`; the RX ISR/DMA path must be RAM-resident. If no path exists, **drop this lever** and keep 240 B frames — #1–#4, #6, #7 still deliver the main gains. |
+| 6 | **Batch the app erase** | One `flash_range_erase(0, len)` for the whole app region instead of a per-sector erase inside `bksf_write_sector_ram`. | Modest (~0.1–0.3 s); removes per-sector erase setup. | IRQs already stay off for the whole apply, so no added deafness. |
+| 7 | **Compression** | RLE/LZ of the 0xFF-padded tail and repeated regions before streaming; decompress into `rx_buf`. | Cuts wire bytes; small for dense firmware, larger for padded images. | CPU cost negligible vs. wire; no baud change. |
+
+**Combined potential:** for an incremental rebuild where only a few sectors change, #1 + #2 + #3 + #4 could take total wall-clock from ~8–11 s down to **~1–2 s** (dominated by reboot + rejoin + the few changed sectors) — roughly **5–10×**. For a full-change image, #4 + #5 + #6 still give ~**1.8–2×** (2.4 s wire floor + reboot/rejoin). These are high-variance estimates: measure the real per-sector diff, the EEPROM wipe time, and the apply time in Phase 0 before committing.
+
+**Realistic expectation (sober):** the **5–10×** figure above is a best-case ceiling, not a planning number. What is *certain* from the code is ~27 ms/sector of hard-coded `SECTOR_PACE` + `CHUNK_PACE` + `SYNC` + ack wire (≈1 s for a 150 KB image), plus the whole re-flash erase phase (~1.7 s) — those are removed with high confidence. Everything else is unmeasured in Phase 0: the image size `L`, the per-frame turnaround, the real EEPROM-wipe/apply cost, and the per-sector diff between two builds. Against that, a **full-image change** with the baseline realistically delivers **~1.2–1.6× total wall-clock (~20–40%, saving ~1–3 s)** — first flashes toward the bottom, re-flashes toward the top. **Both-halves** with #4 overlap can reach **~1.5–2×**. Multi-× gains (3–5×) require delta #1/#3 to bite, which is **bimodal**: a rebuild that relocates code changes most sectors and yields ~1× (no gain), while a localized change can reach ~4–6×. Delta also needs a full-streaming fallback when staging has no previous image (first flash, aborted run, BOOTSEL reflash). The structural ceiling for a full-image update is the 2.4 s wire floor plus the 1.5–4.5 s apply, so **~2× total is the hard cap** unless bytes-on-wire (delta) or baud (excluded) change.
+
+**Explicitly excluded:** (a) **editing QMK core source/headers/linker scripts** — only the §2.1 module mechanisms are permitted; (b) raising the baud (625000 → 781250 / higher, `keyboards/bastardkb/charybdis/4x6/keymaps/vendor/config.h:26`) — the single largest raw lever (~25%+ on wire time), ruled out by the original constraint.
+
+**Additive vs. replacement:** #4–#7 are additive to the §5 baseline; #1–#3 extend it (delta needs the `rx_buf` reconstruction path) and partly replace the "stream the whole image" assumption. All §9 fail-safe invariants still hold: never COMMIT unless VERIFY (now the changed-sector set) is clean, sector 0 last, power-cut → RPI-RP2.
+
+**Constraint compliance:** #1–#4, #6, #7 need **only module code**. #5 is the sole lever that touches core behaviour, and only via the §2.1 supersede mechanisms — if the Phase-0 gate finds no usable path, it is dropped rather than implemented as a core edit.
 
 ## WHERE WE ARE
 
-Plan complete (this document). **No code modified.** Deliberately a fresh document — prior plan docs were not read or edited, per the "fresh start / ignore all previous plans" instruction. Next step is **Phase 0 measurement and driver-capability confirmation on hardware**, then stop for the user's hardware verification before any code changes. Decisions locked from Q&A: all code in the module, ~256 KB RAM pool, per-sector bitmap, total-wall-clock metric.
+Plan complete (this document). **No code modified.** Deliberately a fresh document — prior plan docs were not read or edited, per the "fresh start / ignore all previous plans" instruction. Next step is **Phase 0 measurement and driver-capability confirmation on hardware**, then stop for the user's hardware verification before any code changes. Decisions locked from Q&A: ~256 KB RAM pool, per-sector bitmap, total-wall-clock metric. **Scope refined (latest): module code only** — QMK core files are never edited; core behaviour may be superseded only through the §2.1 community-module mechanisms, gated in Phase 0. §13 levers #1–#4, #6, #7 are pure module code; #5 is conditional on that gate; baud remains excluded. See §13 for beyond-baseline levers and its "Realistic expectation" for a sober gain range (no code modified yet).
 
 ## Task log
 
@@ -173,3 +211,7 @@ Plan complete (this document). **No code modified.** Deliberately a fresh docume
 | 2026-11-12 | Architecture decision | Whole-image RAM buffer → one final VERIFY (CRC + sector bitmap) → re-stream bad sectors → apply directly from RAM. |
 | 2026-11-12 | Write this plan document | Done. No code changes. Awaiting Phase 0 / hardware verification. |
 | 2026-11-12 | Recompute the time-gain estimate (§4/§8) | Corrected: skipped-erase polling is ~0.1 s (not 2.5 s — that applies only to a real re-flash erase); the fixed apply/reboot (~3–4.5 s) caps total-wall-clock gain at ~1.2–1.5× (≈15–35%), while streaming itself gains ~1.4–2.3×. Added a full component budget table. |
+| 2026-11-12 | "Even faster" pass (scope refined next) | Added §13: delta streaming, lazy EEPROM wipe, delta apply, overlapping the two applies, transport-level streaming, batched app erase, compression. Combined potential ~5–10× on incremental rebuilds, ~1.8–2× on full-change images; baud still excluded. Updated §9/§10/WHERE WE ARE. No code modified. |
+| 2026-11-12 | Refine scope: module code only | Constraint clarified: QMK core files are **never edited**; core behaviour supersedable only via §2.1 mechanisms (weak-symbol override, config/post_config macro overrides, runtime table mutation, module build hooks, module-owned data plane). Added §2.1 + Phase-0 gate; reworked §13 #5 from "widen the core `uint8_t`" to a gated module-owned data plane; updated §2/§9/§10/§12/§13/WHERE WE ARE. #1–#4, #6, #7 are pure module code. Baud still excluded. No code modified. |
+| 2026-11-12 | Sober "realistic gains" assessment | Added §13 "Realistic expectation": full-image baseline ~1.2–1.6× (~20–40%), re-flash up to ~1.7×, both-halves ~1.5–2×; multi-× only via delta and only when few sectors change (bimodal, could be ~1×). Key driver is the unmeasured fixed apply cost; the 5–10× figure is a best-case ceiling, not a planning number. No code modified. |
+| 2026-11-12 | Make the delta path explicit in the plan | Added §7 Phase 5 (delta streaming + delta apply, with a mandatory full-streaming fallback and a Phase-0 gate) and clarified in §13 that these levers are part of the plan as measurement-gated follow-on work. Also clarified "no streaming trick" was a ceiling statement, not a named technique. No code modified. |
