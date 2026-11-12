@@ -59,6 +59,13 @@ wsl -d Ubuntu -- bash -lc "cd /home/quinn/qmk_userspace_private && qmk compile -
 `/home/quinn/bastardkb-qmk` must never be edited; all module work lives in this repo
 under `modules/`.
 
+Standing environment gotchas are kept in `agents/working-notes.md` — read it before
+building. In particular: artifacts (`elf`/`map`/`uf2`) are in the **firmware tree's**
+`.build/`, not the userspace; the linker/EEPROM region size is set by
+`PICO_FLASH_SIZE_BYTES` (not `EXTERNAL_FLASH_SIZE`), so the dilemma as built is a
+**2 MB region** (`flash1=0x200000`, eeprom `0x1C0000`) despite its 4 MB chip; and the
+generated peer blob `bk_split_flash_peer_image.c` is **not** gitignored.
+
 ---
 
 ## Part 0 — Decisions and recon
