@@ -62,6 +62,16 @@
 #    define BKSF_CORRUPT_MODE 1
 #endif
 
+// Benchmark escape hatch for the "faster" work. With BKSF_LEGACY_FLUSH=1 the
+// module restores the pre-speed-up streaming behaviour exactly (erase+program
+// inside the per-sector flush, no up-front erase phase, 60 ms sector pace, 4
+// chunks/tick, 2 ms chunk pace), so an A/B transfer time can be measured with the
+// same board and image. Both halves must be flashed with the same flavour (the
+// wire semantics differ but the descriptor version does not). Default 0 = new.
+#ifndef BKSF_LEGACY_FLUSH
+#    define BKSF_LEGACY_FLUSH 0
+#endif
+
 // T5.2 power-cut injection for the combined (both-halves) update. After the
 // master arms its own boot2 (slave already done and rejoined), hold this long
 // before applying, so a power cut hits the master's armed window deterministically

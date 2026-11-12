@@ -35,6 +35,8 @@ static uint32_t rxp_off;         // bytes received into the sector buffer
 static uint32_t rxp_crc;         // expected whole-image CRC
 static uint32_t rxp_crc_run;     // running CRC over received chunks (finalised at VERIFY)
 static uint32_t rxp_flushed;     // bytes durably written to staging
+static uint32_t rxp_erased;      // bytes erased up front (erase phase progress)
+static bool     rxp_erasing;     // erase phase in progress (no chunks accepted yet)
 static bool     rxp_pending;     // a full sector is buffered, awaiting flush
 static uint32_t rxp_pending_off; // staging offset of the buffered sector
 static uint32_t rxp_flush_not_before; // don't start the flush before this time
@@ -48,6 +50,7 @@ static void bksf_rxp_begin(bksf_msg_t *reply, const bksf_msg_t *msg) {
 
     rxp_active  = false;
     rxp_pending = false;
+    rxp_erasing = false;
     if (!bksf_get_staging_window(&staging, &bytes)) {
         reply->status = BKSF_ST_ERR;
         return;
@@ -63,6 +66,11 @@ static void bksf_rxp_begin(bksf_msg_t *reply, const bksf_msg_t *msg) {
     rxp_crc     = crc;
     rxp_crc_run = 0xFFFFFFFFu;
     rxp_flushed = 0;
+    // Start the erase phase: the slave erases the whole staging window one sector
+    // per housekeeping pass *before* any image byte moves, so the streaming
+    // phase's per-sector flush is program-only. Reported through SYNC (rxp_erased).
+    rxp_erased  = 0;
+    rxp_erasing = !BKSF_LEGACY_FLUSH;
     rxp_active  = true;
 
     reply->cmd   = BKSF_CMD_ACK;
@@ -74,7 +82,7 @@ static void bksf_rxp_begin(bksf_msg_t *reply, const bksf_msg_t *msg) {
 // RPC chunk path and the T7.1 bulk-frame path so both enforce the same rules.
 // Returns true if accepted; the caller always reports the resulting rxp_off.
 static bool bksf_rxp_accept(uint32_t off, uint8_t n, const uint8_t *data, uint32_t crc, uint8_t max_chunk) {
-    if (!rxp_active || n == 0 || n > max_chunk || off != rxp_off || rxp_off + n > rxp_len || rxp_pending) {
+    if (!rxp_active || rxp_erasing || n == 0 || n > max_chunk || off != rxp_off || rxp_off + n > rxp_len || rxp_pending) {
         return false;
     }
 
@@ -150,7 +158,7 @@ static void bksf_bulk_handle(uint8_t in_len, const void *in_data, uint8_t out_le
 }
 
 static void bksf_rxp_verify(bksf_msg_t *reply, const bksf_msg_t *msg) {
-    if (!rxp_active || rxp_pending || rxp_off != rxp_len || rxp_flushed != rxp_len) {
+    if (!rxp_active || rxp_erasing || rxp_pending || rxp_off != rxp_len || rxp_flushed != rxp_len) {
         reply->cmd    = BKSF_CMD_NACK;
         reply->status = BKSF_ST_BUSY;
         return;
@@ -208,13 +216,16 @@ static void bksf_rpc_handle(uint8_t in_len, const void *in_data, uint8_t out_len
             case BKSF_CMD_SYNC:
                 reply.cmd   = BKSF_CMD_ACK;
                 reply.value = rxp_flushed;
-                // Also report rxp_off (data[0..3]) so the master can resync after
-                // a lost chunk reply: value=flushed is what FLUSH polls, data=off
-                // is what RESYNC compares.
+                // data[0..3] = rxp_off    (RESYNC compares it to tell "already
+                //                           applied" from "retry")
+                // data[4..7] = rxp_erased (ERASING polls it: this reaches rxp_len
+                //                           when the whole window is erased and the
+                //                           slave is ready for chunks)
                 memcpy(reply.data, &rxp_off, sizeof(rxp_off));
+                memcpy(reply.data + sizeof(rxp_off), &rxp_erased, sizeof(rxp_erased));
                 break;
             case BKSF_CMD_COMMIT:
-                if (!rxp_active || rxp_pending || rxp_off != rxp_len || rxp_flushed != rxp_len) {
+                if (!rxp_active || rxp_erasing || rxp_pending || rxp_off != rxp_len || rxp_flushed != rxp_len) {
                     reply.cmd    = BKSF_CMD_NACK;
                     reply.status = BKSF_ST_BUSY;
                     break;
@@ -225,7 +236,9 @@ static void bksf_rpc_handle(uint8_t in_len, const void *in_data, uint8_t out_len
                 bksf_apply_and_reset((const uint8_t *)(uintptr_t)(BKSF_XIP_BASE + rxp_staging), rxp_len);
                 break;
             case BKSF_CMD_ABORT:
-                rxp_active = false;
+                rxp_active  = false;
+                rxp_pending = false;
+                rxp_erasing = false;
                 reply.cmd  = BKSF_CMD_DONE;
                 bksf_set_state(BKSF_STATE_IDLE);
                 break;
@@ -256,16 +269,28 @@ void bksf_rpc_init(void) {
 
 #    define BKSF_RPC_TIMEOUT_MS 250
 #    define BKSF_RPC_MAX_TRIES 3
-#    define BKSF_CHUNKS_PER_TICK 4
-#    define BKSF_CHUNK_PACE_MS 2         // give the slave's loop time between chunks
-// A 4 KiB staging flush is erase (~45 ms typ) + program (~7 ms) + read-back. The
-// old flat 150 ms pace stalled the master for roughly 3x the real flush time on
-// every sector. Wait just long enough for the first poll to land after a typical
-// flush, then poll quickly; the slave is deaf (IRQs off) while erasing, so an
-// early poll costs only one RPC timeout and is retried.
-#    define BKSF_SECTOR_PACE_MS 60       // first flush poll: ~ one typical 4 KiB erase+program
-#    define BKSF_FLUSH_RETRY_MS 20       // subsequent polls while the flush is still running
-#    define BKSF_FLUSH_MAX_TRIES 30      // plenty of slack per sector (long/aged erases)
+#    if BKSF_LEGACY_FLUSH
+#        define BKSF_CHUNKS_PER_TICK 4   // (legacy baseline) bulk frames per housekeeping pass
+#        define BKSF_CHUNK_PACE_MS 2     // (legacy baseline) gap between passes
+#        define BKSF_SECTOR_PACE_MS 60   // (legacy baseline) first poll after an erase+program flush
+#    else
+#        define BKSF_CHUNKS_PER_TICK 8   // bulk frames per housekeeping pass (keep the link busy)
+#        define BKSF_CHUNK_PACE_MS 1     // small gap between passes so the slave's loop runs
+// The erase was moved *out* of the streaming phase (BKSF_SYNC_ERASING), so a
+// 4 KiB staging flush is now a program-only write (~11 ms typ) with no erase. The
+// slave has a single 4 KiB scratch, so the master still serializes one sector at
+// a time: it waits about one program before the first SYNC poll, then polls
+// quickly. The slave is deaf (IRQs off) while programming, so an early poll costs
+// one RPC timeout and is retried.
+#        define BKSF_SECTOR_PACE_MS 20   // first flush poll: ~ one typical 4 KiB program
+#    endif
+#    define BKSF_FLUSH_RETRY_MS 10       // subsequent polls while the flush is still running
+#    define BKSF_FLUSH_MAX_TRIES 30      // plenty of slack per sector
+// Up-front erase phase. The slave erases one 4 KiB sector per housekeeping pass
+// (a sector erase holds interrupts off ~45 ms), so the master polls slowly and
+// tolerates the polls that race an erase (they time out and are retried).
+#    define BKSF_ERASE_POLL_MS 50        // ERASING poll cadence
+#    define BKSF_ERASE_MAX_TRIES 600     // slack for many sectors and aged (slow) erases
 #    define BKSF_REJOIN_TIMEOUT_MS 15000 // EEPROM wipe (~3 s) + app copy (~1 s) + reboot
 #    define BKSF_REJOIN_POLL_MS 100      // rejoin presence cadence (was a flat 500 ms)
 #    define BKSF_PEER_PROBE_MS 1000     // peer-presence watchdog cadence
@@ -277,6 +302,7 @@ typedef enum {
     BKSF_SYNC_IDLE = 0,
     BKSF_SYNC_ARM,
     BKSF_SYNC_BEGIN,
+    BKSF_SYNC_ERASING,
     BKSF_SYNC_CHUNKS,
     BKSF_SYNC_RESYNC,
     BKSF_SYNC_FLUSH,
@@ -286,7 +312,7 @@ typedef enum {
 } bksf_sync_t;
 
 static bksf_sync_t sync_state    = BKSF_SYNC_IDLE;
-static uint8_t     sync_tries    = 0;
+static uint16_t    sync_tries    = 0;
 static uint32_t    sync_deadline = 0;
 static bksf_msg_t  last_reply;
 
@@ -453,14 +479,36 @@ void housekeeping_task_bk_split_flash(void) {
     // T9.2: age out the transient ERROR indicator state.
     bksf_tick_state();
 
-    // Slave side: flush a buffered sector here, never inside the RPC callback
-    // (an erase/program takes tens of ms and would blow the reply timeout). The
-    // short hold-off lets the master read this chunk's reply first, so the flush
-    // cannot make the transport drop it.
-    if (!is_keyboard_master() && rxp_active && rxp_pending && (int32_t)(timer_read32() - rxp_flush_not_before) >= 0) {
-        rxp_pending = false;
-        if (bksf_staging_flush_sector(rxp_pending_off)) {
-            rxp_flushed += BKSF_FLASH_SECTOR_SIZE;
+    // Slave side. Two phases, both driven from housekeeping (never inside the RPC
+    // callback: an erase/program takes tens of ms and would blow the reply
+    // timeout):
+    //   1. ERASE  -- after BEGIN, erase the whole staging window one sector per
+    //      pass, reporting progress in rxp_erased (the master's ERASING state
+    //      reads it via SYNC). Interrupts are off only for the sector being
+    //      erased, so the slave stays answerable between sectors.
+    //   2. STREAM -- once erased, buffer incoming chunks; on a sector boundary
+    //      flush the buffered sector with a program-only write (the erase is
+    //      already done). The short hold-off lets the master read the chunk's
+    //      reply first, so the flush cannot make the transport drop it.
+    if (!is_keyboard_master() && rxp_active) {
+        if (rxp_erasing) {
+            if (rxp_erased < rxp_len && bksf_staging_erase_sector(rxp_staging + rxp_erased)) {
+                rxp_erased += BKSF_FLASH_SECTOR_SIZE;
+                if (rxp_erased >= rxp_len) {
+                    rxp_erasing = false;
+                    uprintf("bksf: slave erase done (%u bytes)\n", (unsigned)rxp_erased);
+                }
+            }
+        } else if (rxp_pending && (int32_t)(timer_read32() - rxp_flush_not_before) >= 0) {
+            rxp_pending = false;
+#if BKSF_LEGACY_FLUSH
+            bool ok = bksf_staging_flush_sector(rxp_pending_off);
+#else
+            bool ok = bksf_staging_program_sector(rxp_pending_off);
+#endif
+            if (ok) {
+                rxp_flushed += BKSF_FLASH_SECTOR_SIZE;
+            }
         }
     }
 
@@ -510,12 +558,45 @@ void housekeeping_task_bk_split_flash(void) {
                 // split activity until the last sector is durably written.
                 bksf_bulk_quiesce();
                 bksf_set_state(BKSF_STATE_COPYING);
+#if BKSF_LEGACY_FLUSH
                 sync_state    = BKSF_SYNC_CHUNKS;
                 up_off        = 0;
                 sync_deadline = timer_read32();
+#else
+                // The slave now erases the whole staging window (one sector per
+                // housekeeping pass) before accepting any chunk; wait it out.
+                sync_state    = BKSF_SYNC_ERASING;
+                up_off        = 0;
+                sync_tries    = 0;
+                sync_deadline = timer_read32() + BKSF_ERASE_POLL_MS;
+#endif
                 return;
             }
             sync_deadline = timer_read32() + BKSF_RPC_TIMEOUT_MS;
+            return;
+        }
+
+        case BKSF_SYNC_ERASING: {
+            // Poll until the slave reports the whole window erased. A poll that
+            // races a sector erase (interrupts off ~45 ms) times out and is
+            // retried on the next deadline.
+            if (sync_tries >= BKSF_ERASE_MAX_TRIES) {
+                bksf_abort("erase timeout");
+                return;
+            }
+            sync_tries++;
+            if (bksf_rpc_send(BKSF_CMD_SYNC, 0, NULL, 0) && last_reply.cmd == BKSF_CMD_ACK) {
+                uint32_t erased = 0;
+                memcpy(&erased, last_reply.data + sizeof(uint32_t), sizeof(erased));
+                if (erased >= up_len) {
+                    uprintf("bksf: slave erased %u bytes -> stream\n", (unsigned)erased);
+                    sync_state    = BKSF_SYNC_CHUNKS;
+                    up_off        = 0;
+                    sync_deadline = timer_read32();
+                    return;
+                }
+            }
+            sync_deadline = timer_read32() + BKSF_ERASE_POLL_MS;
             return;
         }
 
@@ -553,8 +634,9 @@ void housekeeping_task_bk_split_flash(void) {
                 up_fail_tries = 0;
                 up_off += n;
                 if ((up_off & (BKSF_FLASH_SECTOR_SIZE - 1u)) == 0u) {
-                    // A sector is buffered on the slave; give it time to flush
-                    // (its erase+program is far longer than an RPC reply timeout).
+                    // A sector is buffered on the slave; give it time to program
+                    // it (the program-only flush is far longer than an RPC reply
+                    // timeout) before confirming, then sending more.
                     up_flush_target = up_off;
                     sync_tries      = 0;
                     sync_state      = BKSF_SYNC_FLUSH;

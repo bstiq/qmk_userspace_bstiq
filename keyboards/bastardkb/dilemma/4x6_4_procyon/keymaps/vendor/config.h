@@ -17,11 +17,11 @@
  */
 #pragma once
 
-/* Split serial link speed. bk_split_flash streams the whole peer image over the
- * half-duplex PIO link, so the transfer is wire-bound: 400 KB takes ~18 s at the
- * QMK default (SELECT_SOFT_SERIAL_SPEED 1 = 230400). Run it at 460800 (speed 0)
- * for ~2x. This is the one hardware-sensitive knob here -- if the split link is
- * flaky at 460800, drop back to 1 (or try SERIAL_USART_SPEED directly).
+/* Split serial link speed. The link is a half-duplex PIO serial link. bk_split_flash
+ * streams the whole peer image over it, so the transfer is wire-bound: run it at
+ * 460800 (SELECT_SOFT_SERIAL_SPEED 0) for ~2x over the QMK default (1 = 230400).
+ * This is the one hardware-sensitive knob here -- if the split link is flaky at
+ * 460800, drop back to 1 (or try SERIAL_USART_SPEED directly).
  *   speed 0 = 460800, 1 = 230400 (default), 2 = 115200, ... */
 #define SELECT_SOFT_SERIAL_SPEED 0
 
@@ -64,6 +64,17 @@
  * reflashed too). Keep typing so the bring-up tests can run. Remove this line to
  * restore normal argos gating. */
 #define ARGOS_DISABLE_BUILD_ID_GATE
+
+
+
+
+
+
+
+
+#undef BKSF_LEGACY_FLUSH
+#define BKSF_LEGACY_FLUSH 1
+
 
 
 

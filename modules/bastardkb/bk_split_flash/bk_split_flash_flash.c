@@ -328,32 +328,74 @@ static void __no_inline_not_in_flash_func(bksf_copy4k)(volatile uint8_t *dst, co
     }
 }
 
-// RAM-resident: erase+program one sector from bksf_bounce, then read it back.
-// Caller must hold interrupts disabled: no IRQ may run while the app (or the
-// sector holding the vector table) is being overwritten, because the ISRs live
-// in the flash itself.
-static bool __no_inline_not_in_flash_func(bksf_write_sector_ram)(uint32_t dst_off, bool verify) {
+// RAM-resident: erase+program one sector from `buf`, then read it back. Caller
+// must hold interrupts disabled: no IRQ may run while the app (or the sector
+// holding the vector table) is being overwritten, because the ISRs live in the
+// flash itself.
+static bool __no_inline_not_in_flash_func(bksf_write_sector_ram)(const uint8_t *buf, uint32_t dst_off, bool verify) {
     flash_range_erase(dst_off, BKSF_FLASH_SECTOR_SIZE);
-    flash_range_program(dst_off, bksf_bounce, BKSF_FLASH_SECTOR_SIZE);
+    flash_range_program(dst_off, buf, BKSF_FLASH_SECTOR_SIZE);
 
     if (!verify) {
         return true;
     }
     const volatile uint8_t *p = (const volatile uint8_t *)(uintptr_t)(BKSF_XIP_BASE + dst_off);
     for (uint32_t i = 0; i < BKSF_FLASH_SECTOR_SIZE; i++) {
-        if (p[i] != bksf_bounce[i]) {
+        if (p[i] != buf[i]) {
             return false;
         }
     }
     return true;
 }
 
-// The slave-side RPC receiver accumulates one sector in bksf_scratch() and
-// flushes it here. This only touches staging (never the running app), so
-// interrupts are toggled per sector rather than held off.
+// Legacy (BKSF_LEGACY_FLUSH) per-sector flush: erase+program+read-back in one go,
+// used only by the A/B benchmark path where there is no up-front erase phase.
 bool bksf_staging_flush_sector(uint32_t dst_off) {
     uint32_t irq = save_and_disable_interrupts();
-    bool     ok  = bksf_write_sector_ram(dst_off, true);
+    bool     ok  = bksf_write_sector_ram(bksf_bounce, dst_off, true);
+    restore_interrupts(irq);
+    return ok;
+}
+
+// Erase phase, one 4 KiB staging sector per housekeeping pass (called by the
+// slave-side receiver). A sector that already reads as erased (0xFF) is skipped,
+// so a staging window that has never been written is erased for free. Interrupts
+// are off only for the ~45 ms erase, never across the whole window, so the slave
+// stays answerable to the master between sectors.
+bool bksf_staging_erase_sector(uint32_t dst_off) {
+    const volatile uint8_t *p    = (const volatile uint8_t *)(uintptr_t)(BKSF_XIP_BASE + dst_off);
+    bool                    need = false;
+    for (uint32_t i = 0; i < BKSF_FLASH_SECTOR_SIZE; i++) {
+        if (p[i] != 0xFFu) {
+            need = true;
+            break;
+        }
+    }
+    if (!need) {
+        return true;
+    }
+    uint32_t irq = save_and_disable_interrupts();
+    flash_range_erase(dst_off, BKSF_FLASH_SECTOR_SIZE);
+    restore_interrupts(irq);
+    return true;
+}
+
+// Program-only flush of one already-erased staging sector (the streaming phase).
+// Only staging is touched (never the running app), so interrupts are toggled for
+// the ~11 ms program rather than held off, and there is no erase here: the erase
+// phase did it up front.
+bool bksf_staging_program_sector(uint32_t dst_off) {
+    __compiler_memory_barrier();
+    uint32_t                irq = save_and_disable_interrupts();
+    flash_range_program(dst_off, bksf_bounce, BKSF_FLASH_SECTOR_SIZE);
+    const volatile uint8_t *p  = (const volatile uint8_t *)(uintptr_t)(BKSF_XIP_BASE + dst_off);
+    bool                    ok = true;
+    for (uint32_t i = 0; i < BKSF_FLASH_SECTOR_SIZE; i++) {
+        if (p[i] != bksf_bounce[i]) {
+            ok = false;
+            break;
+        }
+    }
     restore_interrupts(irq);
     return ok;
 }
@@ -415,14 +457,14 @@ void __no_inline_not_in_flash_func(bksf_apply_and_reset)(const uint8_t *src, uin
     for (uint32_t off = BKSF_FLASH_SECTOR_SIZE; ok && off < len; off += BKSF_FLASH_SECTOR_SIZE) {
         bksf_copy4k(bksf_bounce, src + off);
         __compiler_memory_barrier();
-        ok = bksf_write_sector_ram(off, true);
+        ok = bksf_write_sector_ram(bksf_bounce, off, true);
     }
 
     // COMMIT last: sector 0 (boot2 + vector table) with a valid CRC.
     if (ok) {
         bksf_copy4k(bksf_bounce, src);
         __compiler_memory_barrier();
-        ok = bksf_write_sector_ram(0, true);
+        ok = bksf_write_sector_ram(bksf_bounce, 0, true);
     }
 
     // Never return: the running app has been overwritten, so falling back into
@@ -451,7 +493,7 @@ bool bksf_stage_image(const uint8_t *src, uint32_t len) {
         memcpy(bksf_bounce, src + off, BKSF_FLASH_SECTOR_SIZE);
         __compiler_memory_barrier();
         uint32_t irq = save_and_disable_interrupts();
-        bool     ok  = bksf_write_sector_ram(start + off, true);
+        bool     ok  = bksf_write_sector_ram(bksf_bounce, start + off, true);
         restore_interrupts(irq);
         if (!ok) {
             return false;

@@ -111,8 +111,23 @@ uint32_t bksf_crc32(const uint8_t *data, uint32_t len);
 // The module's 4 KiB RAM sector scratch buffer, for the RPC image receiver.
 uint8_t *bksf_scratch(void);
 
-// Erase+program+verify one staging sector, taking the 4 KiB payload from
-// bksf_scratch(). Used by the slave-side RPC receiver to flush a completed sector.
+// Erase one 4 KiB staging sector for the up-front erase phase, taking interrupts
+// off only for the (~45 ms typical) erase itself. A sector that already reads as
+// erased (0xFF) is skipped: the staging window is untouched until an update
+// writes it, so a first-time update into a never-written window pays no erase at
+// all. Used one sector per housekeeping pass so the slave stays answerable.
+bool bksf_staging_erase_sector(uint32_t dst_off);
+
+// Program-only + read-back verify one *already-erased* staging sector, taking the
+// 4 KiB payload from bksf_scratch(). This is the per-sector flush of the streaming
+// phase (~11 ms program, no erase) and is only valid after the erase phase has
+// erased that sector. Used by the slave-side RPC receiver to flush a completed
+// sector.
+bool bksf_staging_program_sector(uint32_t dst_off);
+
+// Legacy (BKSF_LEGACY_FLUSH) per-sector flush: erase+program+read-back, used only
+// by the A/B benchmark path (no up-front erase phase). Not used by the default
+// build.
 bool bksf_staging_flush_sector(uint32_t dst_off);
 
 // Accessors for the (weakly defined) compiled-in peer image.

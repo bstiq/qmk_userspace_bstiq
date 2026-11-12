@@ -11,7 +11,13 @@
 // 32-byte M2S/S2M buffers). This is the control plane only; image bytes move in
 // later parts.
 
-#define BKSF_PROTO_VERSION 2
+// v3: BEGIN now starts a slave-side *erase phase* (the whole staging window is
+// erased up front, one sector per housekeeping pass) before any image byte moves,
+// and SYNC reports erase progress in data[4..7] alongside rxp_off in data[0..3].
+// The streaming flush is therefore program-only. Both halves run the same build;
+// the image descriptor (bk_split_flash_image.h) stamps this version, so a peer
+// built from v2 code is refused before anything is armed.
+#define BKSF_PROTO_VERSION 3
 
 // Payload bytes in one message. Sized so `bksf_msg_t` is exactly 32 bytes (the
 // default split RPC buffer): version+cmd+status+len (4) + value (4) + crc (4) +
@@ -22,13 +28,13 @@ typedef enum {
     BKSF_CMD_NONE = 0,
     BKSF_CMD_ARM,      // master -> slave: arm (invalidate boot2), reply ARMED
     BKSF_CMD_ARMED,    // slave -> master
-    BKSF_CMD_BEGIN,    // master -> slave: image size in `value`, CRC in `data`
+    BKSF_CMD_BEGIN,    // master -> slave: image size in `value`, CRC in `data`; slave ACKs, then erases the window
     BKSF_CMD_CHUNK,    // master -> slave: offset in `value`, `len` bytes in `data`, CRC32 of those bytes in `crc`
     BKSF_CMD_ACK,      // slave -> master: ready / bytes received in `value`
     BKSF_CMD_NACK,     // slave -> master: refused/again
     BKSF_CMD_VERIFY,   // master -> slave: whole-image CRC in `value`
     BKSF_CMD_VERIFIED, // slave -> master
-    BKSF_CMD_SYNC,     // master -> slave: report durable bytes in `value` (ACK)
+    BKSF_CMD_SYNC,     // master -> slave: durable bytes in `value`, rxp_off in data[0..3], erased in data[4..7]
     BKSF_CMD_COMMIT,   // master -> slave: apply + reset
     BKSF_CMD_DONE,     // slave -> master (or abort ack)
     BKSF_CMD_ABORT,    // either: stop, stay recoverable
