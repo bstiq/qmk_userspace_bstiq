@@ -38,18 +38,6 @@
 #endif
 #define RGBLIGHT_LED_COUNT 104
 
-/* bk_split_flash bring-up test selector (T4.3). The module config.h provides the
- * defaults, so override here with #undef + #define and rebuild:
- *   BKSF_TEST_RPC          - T3 ARM/ABORT handshake (arms the slave)   -> image E / case A1
- *   BKSF_TEST_UPDATE_SLAVE - T4 stream + commit the peer image         -> image F / cases A2,A3
- *   BKSF_TEST_DUMP         - facts only (default)
- * T4.3 link-integrity injection:
- *   BKSF_CORRUPT_OFF  - image offset of the chunk to corrupt (0 = off)
- *   BKSF_CORRUPT_MODE - 1 = transient (retry recovers, image G / B1)
- *                       2 = persistent (retries exhaust -> abort, image H / B2) */
-#undef BKSF_TEST
-#define BKSF_TEST BKSF_TEST_DUMP
-
 /* Bring-up escape hatch: argos otherwise blocks *all* keys once the two halves
  * report different build ids (which is exactly what a half-flashed dev board
  * looks like, and what a completed T4 update leaves until the master is
