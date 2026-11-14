@@ -4,11 +4,6 @@
 
 #pragma once
 
-// The LED matrix configuration (offset 1) and motion style (offset 0) are
-// persisted in this module's own community module eeprom datablock, exposed
-// through eeconfig_read_bk_led_matrix_datablock()/eeconfig_update_bk_led_matrix_datablock().
-#define EECONFIG_MODULE_BK_LED_MATRIX_DATA_SIZE 8
-
 /*
  * Second WS2812 chain. QMK's driver is limited to 256 LEDs and is already
  * used for the per-key matrix, so this strip is bit-banged on its own pin.

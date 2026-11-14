@@ -22,6 +22,7 @@
 #include "led_matrix.h"
 #include "led_matrix_motion.h"
 #include "led_matrix_config.h"
+#include "argos.h"
 
 /*
  * Motion core. Velocity is measured per frame from the motion fed in since the
@@ -134,7 +135,7 @@ const char *bklm_motion_style_name(uint8_t style) {
 
 void bklm_motion_style_load(void) {
     uint8_t saved = 0;
-    eeconfig_read_bk_led_matrix_datablock(&saved, 0, sizeof(saved));
+    argos_read_eeprom(ARGOS_OFFSET_LED_MATRIX_CONFIG, &saved, sizeof(saved));
     if (saved >= 1 && bklm_motion_style_valid(saved - 1)) {
         bklm_motion_style = saved - 1;
     }
@@ -183,7 +184,7 @@ void bklm_motion_style_set(uint8_t style, bool preview) {
     }
     if (style != bklm_motion_style) {
         const uint8_t saved = style + 1;
-        eeconfig_update_bk_led_matrix_datablock(&saved, 0, sizeof(saved));
+        argos_write_eeprom(ARGOS_OFFSET_LED_MATRIX_CONFIG, &saved, sizeof(saved));
     }
     bklm_motion_style = style;
     if (!preview) {

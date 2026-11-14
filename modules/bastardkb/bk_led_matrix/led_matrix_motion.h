@@ -41,8 +41,8 @@ uint8_t bklm_motion_cycle_next(uint8_t style, bool backwards);
  * over the last LED_MATRIX_MODULE_MOTION_FADE_MS. */
 void bklm_motion_linger(uint32_t ms);
 
-/* Loads the saved style from this module's eeprom datablock (stored +1 so a
- * cleared EEPROM reads as "not set"). */
+/* Loads the saved style from Argos storage (stored +1 so a cleared EEPROM
+ * reads as "not set"). */
 void bklm_motion_style_load(void);
 
 /* Switches style, saves it to EEPROM if it changed, and with preview plays it

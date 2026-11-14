@@ -21,6 +21,7 @@
 #include "led_matrix.h"
 #include "led_matrix_config.h"
 #include "led_matrix_motion.h"
+#include "argos.h"
 
 uint8_t bklm_off_s, bklm_dim_s;
 uint8_t bklm_idle_cfg;
@@ -33,7 +34,7 @@ static bool bklm_timeout_valid(uint8_t s) {
 
 void bklm_config_load(void) {
     uint8_t saved[5] = {0, 0, 0, 0, 0};
-    eeconfig_read_bk_led_matrix_datablock(saved, 1, sizeof(saved));
+    argos_read_eeprom(ARGOS_OFFSET_LED_MATRIX_CONFIG + 1, saved, sizeof(saved));
     bklm_off_s      = bklm_timeout_valid(saved[0]) ? saved[0] : 0;
     bklm_dim_s      = bklm_timeout_valid(saved[1]) ? saved[1] : 0;
     bklm_idle_cfg   = saved[2];
@@ -69,7 +70,7 @@ void bklm_config_adopt(uint8_t off_s, uint8_t dim_s, uint8_t idle_cfg, uint16_t 
 
 void bklm_config_save(void) {
     const uint8_t saved[5] = {bklm_off_s, bklm_dim_s, bklm_idle_cfg, bklm_cycle_mask & 0xFF, bklm_cycle_mask >> 8};
-    eeconfig_update_bk_led_matrix_datablock(saved, 1, sizeof(saved));
+    argos_write_eeprom(ARGOS_OFFSET_LED_MATRIX_CONFIG + 1, saved, sizeof(saved));
     bklm_save_seq++;
 }
 

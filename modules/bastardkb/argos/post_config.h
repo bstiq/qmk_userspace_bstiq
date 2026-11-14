@@ -31,13 +31,24 @@
 #endif
 #define DYNAMIC_KEYMAP_LAYER_COUNT 8
 
-// First, so enabling it leaves everything after it at the same EEPROM address.
+// Optional modules go first: the argos block is anchored to the end of the
+// EEPROM, so growing the block at offset 0 leaves the absolute address of
+// everything after it unchanged.
+
+// Split flash: master firmware fingerprint (whole-image CRC-32).
+#ifdef COMMUNITY_MODULE_BK_SPLIT_FLASH_ENABLE
+#    define ARGOS_SIZE_SPLIT_FLASH_CONFIG 4
+#else
+#    define ARGOS_SIZE_SPLIT_FLASH_CONFIG 0
+#endif
+#define ARGOS_OFFSET_SPLIT_FLASH_CONFIG 0
+
 #ifdef COMMUNITY_MODULE_BK_LED_MATRIX_ENABLE
 #    define ARGOS_SIZE_LED_MATRIX_CONFIG 8
 #else
 #    define ARGOS_SIZE_LED_MATRIX_CONFIG 0
 #endif
-#define ARGOS_OFFSET_LED_MATRIX_CONFIG 0
+#define ARGOS_OFFSET_LED_MATRIX_CONFIG (ARGOS_OFFSET_SPLIT_FLASH_CONFIG + ARGOS_SIZE_SPLIT_FLASH_CONFIG)
 
 // Do we have a pointing device? Then we want to save some memory for it.
 #ifdef BK_HAS_POINTING_DEVICE
@@ -81,7 +92,7 @@
 // _Static_assert(sizeof(argos_rgb_t) == ARGOS_SIZE_RGB_MATRIX_KEY_DATA, "Invalid size for argos_rgb_t");
 #define ARGOS_SIZE_RGB_MATRIX_ENTRIES (ARGOS_RGB_MATRIX_ENTRIES * ARGOS_SIZE_RGB_MATRIX_KEY_DATA)
 
-#define ARGOS_EEPROM_SIZE_CALC (ARGOS_SIZE_CONFIG + ARGOS_SIZE_LED_MATRIX_CONFIG + ARGOS_SIZE_COMBOS + ARGOS_SIZE_TAP_DANCES + ARGOS_SIZE_RGB_MATRIX_ENTRIES + ARGOS_SIZE_POINTER_CONFIG)
+#define ARGOS_EEPROM_SIZE_CALC (ARGOS_SIZE_SPLIT_FLASH_CONFIG + ARGOS_SIZE_CONFIG + ARGOS_SIZE_LED_MATRIX_CONFIG + ARGOS_SIZE_COMBOS + ARGOS_SIZE_TAP_DANCES + ARGOS_SIZE_RGB_MATRIX_ENTRIES + ARGOS_SIZE_POINTER_CONFIG)
 
 // Reduce max address for dynamic keymap to ensure we don't overlap with Argos' EEPROM storage
 // much easier than trying to set the start address.
