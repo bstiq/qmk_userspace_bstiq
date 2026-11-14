@@ -37,16 +37,3 @@
 #undef RGBLIGHT_LED_COUNT
 #endif
 #define RGBLIGHT_LED_COUNT 104
-
-/* Bring-up escape hatch: argos otherwise blocks *all* keys once the two halves
- * report different build ids (which is exactly what a half-flashed dev board
- * looks like, and what a completed T4 update leaves until the master is
- * reflashed too). Keep typing so the bring-up tests can run. Remove this line to
- * restore normal argos gating. */
-#define ARGOS_DISABLE_BUILD_ID_GATE
-
-
-
-
-
-

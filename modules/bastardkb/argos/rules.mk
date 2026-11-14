@@ -7,5 +7,4 @@ COMBO_ENABLE ?= yes
 TAP_DANCE_ENABLE ?= yes
 VIA_ENABLE ?= yes
 
-# For debugging purposes
-CONSOLE_ENABLE = yes
+# TODO tapping term per key

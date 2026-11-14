@@ -28,7 +28,7 @@
 
 #define ARGOS_OFFSET_CONFIG 0
 
-#define ARGOS_SIZE_CONFIG 13 // manually sync with argos.h
+#define ARGOS_SIZE_CONFIG 11 // manually sync with argos.h
 // _Static_assert(sizeof(argos_config_t) == ARGOS_SIZE_CONFIG, "Invalid size for argos_config_t");
 
 #define ARGOS_OFFSET_COMBO (ARGOS_OFFSET_CONFIG + ARGOS_SIZE_CONFIG)

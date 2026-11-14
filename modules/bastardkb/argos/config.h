@@ -39,15 +39,14 @@
 #define DYNAMIC_KEYMAP_MACRO_DELAY 8
 
 // More available live storage! Useful for tap dances and RGB
-// Also, better read write endurance: a larger backing store spreads writes
-// across more flash, extending life over the same logical size.
+// Also, better read write endurance
 #define WEAR_LEVELING_LOGICAL_SIZE 65536
 #define WEAR_LEVELING_BACKING_SIZE (WEAR_LEVELING_LOGICAL_SIZE * 4)
 
 #ifdef COMMUNITY_MODULE_BK_LED_MATRIX_ENABLE
-    #define SPLIT_TRANSACTION_IDS_KB RPC_ID_BUILD_ID_SYNC, RPC_ID_RGB_SYNC, RPC_ID_LED_MATRIX_SYNC
+    #define SPLIT_TRANSACTION_IDS_KB RPC_ID_RGB_SYNC, RPC_ID_LED_MATRIX_SYNC
 #else
-#define SPLIT_TRANSACTION_IDS_KB RPC_ID_BUILD_ID_SYNC, RPC_ID_RGB_SYNC
+    #define SPLIT_TRANSACTION_IDS_KB RPC_ID_RGB_SYNC
 #endif
 
 #if defined(POINTING_DEVICE_DRIVER_pmw3360) || defined(POINTING_DEVICE_DRIVER_digitizer) || defined(POINTING_DEVICE_DRIVER_cirque_pinnacle_spi)
