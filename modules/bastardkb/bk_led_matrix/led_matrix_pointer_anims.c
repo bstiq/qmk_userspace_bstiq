@@ -87,8 +87,8 @@ static void bklm_anim_scope(RGB *pixels, int32_t mx, int32_t my, uint32_t dt, bo
         tx = sx = BKLM_COLS * 128;
         ty = sy = BKLM_ROWS * 128;
     }
-    tx = CONSTRAIN(tx + mx * BKLM_SCOPE_Q8_PER_COUNT, BKLM_SCOPE_MARGIN, BKLM_COLS * 256 - BKLM_SCOPE_MARGIN);
-    ty = CONSTRAIN(ty + my * BKLM_SCOPE_Q8_PER_COUNT, BKLM_SCOPE_MARGIN, BKLM_ROWS * 256 - BKLM_SCOPE_MARGIN);
+    tx = BKLM_CONSTRAIN(tx + mx * BKLM_SCOPE_Q8_PER_COUNT, BKLM_SCOPE_MARGIN, BKLM_COLS * 256 - BKLM_SCOPE_MARGIN);
+    ty = BKLM_CONSTRAIN(ty + my * BKLM_SCOPE_Q8_PER_COUNT, BKLM_SCOPE_MARGIN, BKLM_ROWS * 256 - BKLM_SCOPE_MARGIN);
     sx += (tx - sx) * (int32_t)dt / 250;
     sy += (ty - sy) * (int32_t)dt / 250;
 

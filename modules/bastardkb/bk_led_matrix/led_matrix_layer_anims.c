@@ -137,7 +137,7 @@ static void bklm_anim_equalizer(RGB *pixels, uint32_t dt) {
     }
     for (uint8_t b = 0; b < 4; b++) {
         level[b] += (target[b] - level[b]) * (int32_t)dt / 120;
-        level[b] = CONSTRAIN(level[b], 0, BKLM_ROWS * 256);
+        level[b] = BKLM_CONSTRAIN(level[b], 0, BKLM_ROWS * 256);
         peak[b]  = MAX(peak[b] - (int32_t)dt * 6 * 256 / 1000, level[b]); /* peaks fall 6 rows/s */
         const int16_t h  = (int16_t)(level[b] >> 8);
         const int16_t pk = (int16_t)MIN(peak[b] >> 8, BKLM_ROWS - 1);
@@ -328,8 +328,8 @@ static void bklm_anim_math(RGB *pixels, RGB c, uint32_t dt) {
         m->y += m->vy * (int32_t)dt / 1000;
         if (m->x < x0 || m->x > x1) m->vx = (int16_t)-m->vx; /* bounce inside the quarter */
         if (m->y < y0 || m->y > y1) m->vy = (int16_t)-m->vy;
-        m->x = CONSTRAIN(m->x, x0, x1);
-        m->y = CONSTRAIN(m->y, y0, y1);
+        m->x = BKLM_CONSTRAIN(m->x, x0, x1);
+        m->y = BKLM_CONSTRAIN(m->y, y0, y1);
 
         /* Fade in over the first quarter of its life, out over the last. */
         const uint32_t q   = m->life / 4;

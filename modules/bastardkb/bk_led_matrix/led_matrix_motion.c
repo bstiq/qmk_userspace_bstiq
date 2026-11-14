@@ -367,8 +367,8 @@ bool bklm_draw_motion(RGB *pixels) {
     }
 
     /* Clamp before squaring so the sum fits in 32 bits. */
-    const int32_t  vx    = CONSTRAIN(bklm_vel_x, -30000, 30000);
-    const int32_t  vy    = CONSTRAIN(-bklm_vel_y, -30000, 30000); /* panel y is up */
+    const int32_t  vx    = BKLM_CONSTRAIN(bklm_vel_x, -30000, 30000);
+    const int32_t  vy    = BKLM_CONSTRAIN(-bklm_vel_y, -30000, 30000); /* panel y is up */
     const uint32_t speed = bklm_isqrt((uint32_t)(vx * vx) + (uint32_t)(vy * vy));
     if (speed >= LED_MATRIX_MODULE_MOTION_MIN_SPEED) {
         bklm_dir_x = (int16_t)(vx * 127 / (int32_t)speed);

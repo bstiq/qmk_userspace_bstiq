@@ -76,7 +76,7 @@ void bklm_draw_swimming_duck(RGB *pixels) {
     } else {
         x += dir * (int32_t)(BKLM_DUCK_SPEED * dt / 1000);
         if (x <= 0 || x >= (BKLM_COLS - BKLM_DUCK_W) * 256) {
-            x   = CONSTRAIN(x, 0, (BKLM_COLS - BKLM_DUCK_W) * 256);
+            x   = BKLM_CONSTRAIN(x, 0, (BKLM_COLS - BKLM_DUCK_W) * 256);
             dir = (int8_t)-dir;
         }
     }

@@ -31,6 +31,10 @@
 #include "transactions.h"
 #include "introspection.h"
 
+#ifdef COMMUNITY_MODULE_BK_SPLIT_FLASH_ENABLE
+#    include "bk_split_flash.h"
+#endif
+
 #ifdef COMMUNITY_MODULE_BK_POINTING_DEVICE_ENABLE
 #    include "bk_pointing_modes.h"
 #endif
@@ -165,8 +169,8 @@ static void bklm_sync_task(void) {
         .mode       = mode,
         .activity   = bklm_activity,
         .style      = bklm_motion_style,
-        .dx         = (int16_t)CONSTRAIN(bklm_motion_x, INT16_MIN, INT16_MAX),
-        .dy         = (int16_t)CONSTRAIN(bklm_motion_y, INT16_MIN, INT16_MAX),
+        .dx         = (int16_t)BKLM_CONSTRAIN(bklm_motion_x, INT16_MIN, INT16_MAX),
+        .dy         = (int16_t)BKLM_CONSTRAIN(bklm_motion_y, INT16_MIN, INT16_MAX),
         .off_s      = bklm_off_s,
         .dim_s      = bklm_dim_s,
         .save_seq   = bklm_save_seq,
@@ -238,6 +242,12 @@ void housekeeping_task_bk_led_matrix(void) {
     if (!bklm_on_panel_half()) {
         return;
     }
+
+#ifdef COMMUNITY_MODULE_BK_SPLIT_FLASH_ENABLE
+    if (bk_split_flash_receiving()) {
+        return;
+    }
+#endif
 
     const uint32_t idle_ms = timer_elapsed32(bklm_last_input_ms);
 

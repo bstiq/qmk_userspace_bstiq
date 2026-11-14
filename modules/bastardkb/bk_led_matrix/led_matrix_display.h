@@ -9,6 +9,10 @@
 #define BKLM_COLS 12
 #define BKLM_ROWS 16
 
+/* QMK no longer exposes the generic CONSTRAIN macro. */
+#define BKLM_CONSTRAIN(value, lower, upper) \
+    ((value) < (lower) ? (lower) : ((value) > (upper) ? (upper) : (value)))
+
 /* Paints one visual framebuffer and returns after the strip latches.
  * pixels has LED_MATRIX_MODULE_LED_COUNT entries, row-major, x = 0 at the
  * left and y = 0 at the bottom. No-op when pixels is NULL. */

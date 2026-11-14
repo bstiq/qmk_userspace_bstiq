@@ -145,7 +145,7 @@ bool bklm_motion_asteroids(RGB *pixels, const bklm_motion_t *m) {
     if (alive) {
         const int8_t  diff = (int8_t)(uint8_t)(target - ang);
         const int32_t most = MAX(LED_MATRIX_MODULE_ASTEROIDS_TURN_RATE * dt / 1000, 1);
-        ang                = (uint8_t)(ang + CONSTRAIN(diff, -most, most));
+        ang                = (uint8_t)(ang + BKLM_CONSTRAIN(diff, -most, most));
         shield_ms          = MAX(shield_ms - dt, 0);
     } else if ((respawn_ms -= dt) <= 0) {
         ang   = target;
