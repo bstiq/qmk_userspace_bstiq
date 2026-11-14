@@ -9,7 +9,7 @@
 #include "util.h"
 
 // Argos protocol version
-#define ARGOS_PROTOCOL_VERSION 0x0008
+#define ARGOS_PROTOCOL_VERSION 0x0007
 #define ARGOS_CMD_PREFIX 0x90 // hopefully something that won't conflict with VIA
 #define QMK_KEYCODES_VERSION_COMPATIBLE_0 0
 #define QMK_KEYCODES_VERSION_COMPATIBLE_1 0
@@ -45,7 +45,6 @@ enum argos_command_id {
     argos_id_set_axis_invert                           = 0x18, // legacy
     argos_id_set_dragscroll_dpi                        = 0x19, // legacy
     argos_id_term_config                           = 0x1A, // sub-command
-    argos_id_led_matrix                              = 0x1B, // sub-command
 };
 
 enum argos_command_term_id {

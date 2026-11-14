@@ -50,10 +50,6 @@ ASSERT_COMMUNITY_MODULES_MIN_API_VERSION(1, 0, 0);
 bkpd_config_t g_bkpd_config                  = {0};
 int8_t changing_dpi_settings_for_mode = -1;
 
-#if defined(BK_HAS_POINTING_DEVICE)
-_Static_assert(sizeof(bkpd_config_t) <= EECONFIG_MODULE_BK_POINTING_DEVICE_DATA_SIZE, "bkpd_config_t does not fit in the module eeprom datablock");
-#endif
-
 /**
  * \brief Set the value of `config` from EEPROM.
  *
@@ -63,8 +59,9 @@ _Static_assert(sizeof(bkpd_config_t) <= EECONFIG_MODULE_BK_POINTING_DEVICE_DATA_
  * explicitly set them to `false` in this function.
  */
 static void read_bkpd_config_from_eeprom(void) {
-#if defined(BK_HAS_POINTING_DEVICE)
-    eeconfig_read_bk_pointing_device_datablock(&g_bkpd_config, 0, sizeof(bkpd_config_t));
+// TODO: replace with per-module memory management
+#if defined(BK_HAS_POINTING_DEVICE) && defined(COMMUNITY_MODULE_ARGOS_ENABLE)
+    argos_read_eeprom(ARGOS_OFFSET_POINTER_CONFIG, &g_bkpd_config, sizeof(bkpd_config_t));
 #else
     g_bkpd_config.raw = eeconfig_read_kb() & 0xff;
 #endif
@@ -79,8 +76,9 @@ static void read_bkpd_config_from_eeprom(void) {
  * these across reboots of the board.
  */
 void write_bkpd_config_to_eeprom(void) {
-#if defined(BK_HAS_POINTING_DEVICE)
-    eeconfig_update_bk_pointing_device_datablock(&g_bkpd_config, 0, sizeof(bkpd_config_t));
+// TODO: replace with per-module memory management
+#if defined(BK_HAS_POINTING_DEVICE) && defined(COMMUNITY_MODULE_ARGOS_ENABLE)
+    argos_write_eeprom(ARGOS_OFFSET_POINTER_CONFIG, &g_bkpd_config, sizeof(bkpd_config_t));
 #else
     eeconfig_update_kb(g_bkpd_config.raw);
 #endif

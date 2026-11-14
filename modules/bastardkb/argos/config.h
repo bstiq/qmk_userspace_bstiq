@@ -43,13 +43,11 @@
 #define WEAR_LEVELING_LOGICAL_SIZE 65536
 #define WEAR_LEVELING_BACKING_SIZE (WEAR_LEVELING_LOGICAL_SIZE * 4)
 
-// Keep the keyboard-specific transaction layout identical on both halves.
-// The duck module may be present only in the master image while the initial
-// clone is running; omitting its reserved ID on the secondary would shift
-// PUT_BK_SPLIT_FLASH and make the master's clone transaction invalid there.
-// PUT_BK_SPLIT_FLASH as last so it's always the same, regardless of wether we add more QMK features later
-// (otherwise newer versions of firmware won't be able to flash older ones)
-#define SPLIT_TRANSACTION_IDS_KB RPC_ID_RGB_SYNC, RPC_ID_LED_MATRIX_SYNC, PUT_BK_SPLIT_FLASH = 25
+#ifdef COMMUNITY_MODULE_BK_LED_MATRIX_ENABLE
+    #define SPLIT_TRANSACTION_IDS_KB RPC_ID_RGB_SYNC, RPC_ID_LED_MATRIX_SYNC
+#else
+    #define SPLIT_TRANSACTION_IDS_KB RPC_ID_RGB_SYNC
+#endif
 
 #if defined(POINTING_DEVICE_DRIVER_pmw3360) || defined(POINTING_DEVICE_DRIVER_digitizer) || defined(POINTING_DEVICE_DRIVER_cirque_pinnacle_spi)
     #define BK_HAS_POINTING_DEVICE 1
@@ -60,9 +58,4 @@
 #endif
 #ifndef SPLIT_LED_STATE_ENABLE
 #define SPLIT_LED_STATE_ENABLE
-#endif
-
-// Held-modifier names are drawn on the panel half, which needn't be the USB half.
-#ifndef SPLIT_MODS_ENABLE
-#    define SPLIT_MODS_ENABLE
 #endif

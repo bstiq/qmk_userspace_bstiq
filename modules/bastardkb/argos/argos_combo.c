@@ -3,7 +3,10 @@
 
 #include "argos.h"
 #include "eeconfig.h"
+#include "eeprom.h"
 #include "keymap_introspection.h"
+#include "nvm_eeprom_eeconfig_internal.h"
+#include "nvm_eeprom_via_internal.h"
 #include "quantum.h"
 #include "raw_hid.h"
 #include "version.h"

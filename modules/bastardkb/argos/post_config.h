@@ -17,6 +17,11 @@
 
 #pragma once
 
+// #include "bk_pointing_device.h"
+// #include "argos_combo.h"
+// #include "argos_tapdance.h"
+// #include "argos.h"
+
 // for rgb mostly
 #define SPLIT_LAYER_STATE_ENABLE
 
@@ -26,7 +31,24 @@
 #endif
 #define DYNAMIC_KEYMAP_LAYER_COUNT 8
 
-#define ARGOS_OFFSET_CONFIG 0
+// First, so enabling it leaves everything after it at the same EEPROM address.
+#ifdef COMMUNITY_MODULE_BK_LED_MATRIX_ENABLE
+#    define ARGOS_SIZE_LED_MATRIX_CONFIG 8
+#else
+#    define ARGOS_SIZE_LED_MATRIX_CONFIG 0
+#endif
+#define ARGOS_OFFSET_LED_MATRIX_CONFIG 0
+
+// Do we have a pointing device? Then we want to save some memory for it.
+#ifdef BK_HAS_POINTING_DEVICE
+#    define ARGOS_SIZE_POINTER_CONFIG 142
+#    define ARGOS_OFFSET_POINTER_CONFIG (ARGOS_OFFSET_LED_MATRIX_CONFIG + ARGOS_SIZE_LED_MATRIX_CONFIG)
+#    define ARGOS_OFFSET_CONFIG (ARGOS_OFFSET_POINTER_CONFIG + ARGOS_SIZE_POINTER_CONFIG)
+// _Static_assert(sizeof(bkpd_config_t) == ARGOS_SIZE_POINTER_CONFIG, "Pointer config size does not match expected size");
+#else
+#    define ARGOS_SIZE_POINTER_CONFIG 0
+#    define ARGOS_OFFSET_CONFIG (ARGOS_OFFSET_LED_MATRIX_CONFIG + ARGOS_SIZE_LED_MATRIX_CONFIG)
+#endif
 
 #define ARGOS_SIZE_CONFIG 11 // manually sync with argos.h
 // _Static_assert(sizeof(argos_config_t) == ARGOS_SIZE_CONFIG, "Invalid size for argos_config_t");
@@ -59,12 +81,11 @@
 // _Static_assert(sizeof(argos_rgb_t) == ARGOS_SIZE_RGB_MATRIX_KEY_DATA, "Invalid size for argos_rgb_t");
 #define ARGOS_SIZE_RGB_MATRIX_ENTRIES (ARGOS_RGB_MATRIX_ENTRIES * ARGOS_SIZE_RGB_MATRIX_KEY_DATA)
 
-#define ARGOS_EEPROM_SIZE_CALC (ARGOS_SIZE_CONFIG + ARGOS_SIZE_COMBOS + ARGOS_SIZE_TAP_DANCES + ARGOS_SIZE_RGB_MATRIX_ENTRIES)
+#define ARGOS_EEPROM_SIZE_CALC (ARGOS_SIZE_CONFIG + ARGOS_SIZE_LED_MATRIX_CONFIG + ARGOS_SIZE_COMBOS + ARGOS_SIZE_TAP_DANCES + ARGOS_SIZE_RGB_MATRIX_ENTRIES + ARGOS_SIZE_POINTER_CONFIG)
 
-// Argos persists its data in its own community module eeprom datablock.
-// The generated eeconfig_read_argos_datablock()/eeconfig_update_argos_datablock()
-// APIs are exposed to the module code based on this size.
-#define EECONFIG_MODULE_ARGOS_DATA_SIZE ARGOS_EEPROM_SIZE_CALC
+// Reduce max address for dynamic keymap to ensure we don't overlap with Argos' EEPROM storage
+// much easier than trying to set the start address.
+#define DYNAMIC_KEYMAP_EEPROM_MAX_ADDR (TOTAL_EEPROM_BYTE_COUNT - 1 - ARGOS_EEPROM_SIZE_CALC)
 
 // By default, macro space takes all the rest of the available space.
 // This is made with AVR in mind, as that space will be very small.
